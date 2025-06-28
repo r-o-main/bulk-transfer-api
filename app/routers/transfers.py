@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, status
 # from app.models.schemas import BulkTransferRequest
 from pydantic import BaseModel
@@ -8,7 +10,7 @@ from uuid import UUID
 router = APIRouter()  # https://fastapi.tiangolo.com/reference/apirouter
 
 
-class CreditTransfer(BaseModel):
+class CreditTransfer(BaseModel):  # todo enforce strict mode
     transfer_id: Optional[UUID] = None
     amount: str
     currency: str
@@ -18,8 +20,8 @@ class CreditTransfer(BaseModel):
     description: str
 
 
-class BulkTransferRequest(BaseModel):
-    bulk_id: UUID
+class BulkTransferRequest(BaseModel):  # todo enforce strict mode
+    # bulk_id: UUID  # todo Milestone 3
     organization_bic: str
     organization_iban: str
     credit_transfers: List[CreditTransfer]
@@ -28,4 +30,5 @@ class BulkTransferRequest(BaseModel):
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
 def create_bulk_transfer(request: BulkTransferRequest):  # todo check async
     # todo
-    return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
+    # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
+    return {"message": "Bulk transfer accepted", "bulk_id": str(uuid.uuid4())}
