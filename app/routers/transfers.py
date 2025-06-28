@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 # from app.models.schemas import BulkTransferRequest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from uuid import UUID
 
@@ -28,6 +28,16 @@ class CreditTransfer(BaseModel):  # todo enforce strict mode
     model_config = {
         "extra": "forbid"
     }
+
+
+    # @field_validator("amount", mode="after")
+    # @classmethod
+    # def validate_amount(cls, value):
+    #     to_cents(amount_in_euros_str=value)
+    #     return value
+
+    def amount_to_cents(self) -> int:
+        return to_cents(self.amount)
 
 
 class BulkTransferRequest(BaseModel):  # todo enforce strict mode

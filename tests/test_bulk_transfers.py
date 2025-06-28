@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import Optional, List, Dict
 
 import pytest
 
@@ -12,6 +13,45 @@ logger = logging.getLogger()
 
 
 client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, https://fastapi.tiangolo.com/tutorial/testing/
+
+
+def _stub_credit_transfer(
+        amount: Optional[str|int] = None,
+        description: Optional[str] = None,
+        key_to_remove: Optional[str] = None,
+        key_to_add: Optional[str] = None,
+):
+    stubbed_credit_transfer = {
+        "amount": amount if amount is not None else "14.5",
+        "currency": "EUR",
+        "counterparty_name": "Bip Bip",
+        "counterparty_bic": "CRLYFRPPTOU",
+        "counterparty_iban": "EE383680981021245685",
+        "description": description if description else "Wonderland/4410"
+    }
+    if key_to_remove is not None:
+        del stubbed_credit_transfer[key_to_remove]
+    if key_to_add is not None:
+        stubbed_credit_transfer[key_to_add] = "whatever"
+    return stubbed_credit_transfer
+
+
+def _stub_bulk_transfer_payload(
+        credit_transfers: Optional[List[Dict]] = None,
+        key_to_remove: Optional[str] = None,
+        key_to_add: Optional[str] = None,
+):
+    stubbed_bulk_transfer_payload = {
+        "organization_bic": "OIVUSCLQXXX",
+        "organization_iban": "FR10474608000002006107XXXXX",
+        "credit_transfers": credit_transfers if credit_transfers is not None else []
+    }
+    if key_to_remove is not None:
+        del stubbed_bulk_transfer_payload[key_to_remove]
+    if key_to_add is not None:
+        stubbed_bulk_transfer_payload[key_to_add] = "whatever"
+    print(f'payload={stubbed_bulk_transfer_payload}')
+    return stubbed_bulk_transfer_payload
 
 
 def _load_resource(resource_name):
@@ -31,58 +71,28 @@ def test_transfers_bulk__when_valid_payload__should_return_201(sample_file):
 
 
 @pytest.mark.parametrize("assert_message, payload", [
-    ('when missing mandatory request key (credit_transfers)', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-    }),
-    ('when missing mandatory credit transfer key (amount)', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "currency": "EUR",
-                "counterparty_name": "Bip Bip",
-                "counterparty_bic": "CRLYFRPPTOU",
-                "counterparty_iban": "EE383680981021245685",
-                "description": "Wonderland/4410"
-            }
-        ]
-    }),
-    ('when amount is an int', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": 15,
-                "currency": "EUR",
-                "counterparty_name": "Bip Bip",
-                "counterparty_bic": "CRLYFRPPTOU",
-                "counterparty_iban": "EE383680981021245685",
-                "description": "Wonderland/4410"
-            }
-        ]
-    }),
-    ('when additional request key', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [],
-        "additional_key": "whatever"
-    }),
-    ('when additional credit_transfers key', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "15.2",
-                "currency": "EUR",
-                "counterparty_name": "Bip Bip",
-                "counterparty_bic": "CRLYFRPPTOU",
-                "counterparty_iban": "EE383680981021245685",
-                "description": "Wonderland/4410",
-                "additional_key": "whatever"
-            }
-        ],
-    }),
+    (
+            'when missing mandatory request key (credit_transfers)',
+            _stub_bulk_transfer_payload(key_to_remove="credit_transfers")
+    ),
+    (
+            'when missing mandatory credit transfer key (amount)',
+            _stub_bulk_transfer_payload(credit_transfers=[_stub_credit_transfer(key_to_remove="amount")])
+    ),
+    (
+            'when amount is an int',
+            _stub_bulk_transfer_payload(credit_transfers=[_stub_credit_transfer(amount=15)])
+    ),
+    (
+            'when additional request key',
+            _stub_bulk_transfer_payload(key_to_add="unexpected_key")
+    ),
+    (
+            'when additional credit_transfers key',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[_stub_credit_transfer(key_to_add="unexpected_key")]
+            )
+    ),
 ])
 def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_message, payload):
     response = client.post(url="/transfers/bulk", json=payload)
@@ -120,120 +130,73 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
     #     "organization_iban": "INVALID_IBAN",
     #     "credit_transfers": [],
     # }),
-    ('when amount to transfer < 0', {
-        "organization_bic": "INVALID_BIC",
-        "organization_iban": "INVALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "61238",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-            {
-                "amount": "-15",
-                "currency": "EUR",
-                "counterparty_name": "Bip Bip",
-                "counterparty_bic": "CRLYFRPPTOU",
-                "counterparty_iban": "EE383680981021245685",
-                "description": "Wonderland/4410",
-            }
-        ],
-    }),
-    ('when amount to transfer == 0', {
-        "organization_bic": "INVALID_BIC",
-        "organization_iban": "INVALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "61238",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-            {
-                "amount": "0",
-                "currency": "EUR",
-                "counterparty_name": "Bip Bip",
-                "counterparty_bic": "CRLYFRPPTOU",
-                "counterparty_iban": "EE383680981021245685",
-                "description": "Wonderland/4410",
-            }
-        ],
-    }),
-    ('when amount to transfer is null', {
-        "organization_bic": "INVALID_BIC",
-        "organization_iban": "INVALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": None,
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-        ],
-    }),
-    ('when amount to transfer is empty', {
-        "organization_bic": "INVALID_BIC",
-        "organization_iban": "INVALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-        ],
-    }),
-    ('when amount to transfer has more than 2 decimal places', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "13.2356",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-        ],
-    }),
-    ('when amount to transfer is invalid', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "aaaaa",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "//TeslaMotors/Invoice/12"
-            },
-        ],
-    }),
-    ('when description is too short', {
-        "organization_bic": "VALID_BIC",
-        "organization_iban": "VALID_IBAN",
-        "credit_transfers": [
-            {
-                "amount": "15",
-                "currency": "EUR",
-                "counterparty_name": "Wile E Coyote",
-                "counterparty_bic": "ZDRPLBQI",
-                "counterparty_iban": "DE9935420810036209081725212",
-                "description": "toto"
-            },
-        ],
-    }),
+    (
+            'when at least one amount to transfer < 0',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount="61238"),
+                    _stub_credit_transfer(amount="-15"),
+                ]
+            )
+    ),
+    (
+            'when at least one amount to transfer == 0',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount="0"),
+                    _stub_credit_transfer(amount="199.99"),
+                ]
+            )
+    ),
+    (
+            'when at least one amount to transfer is null',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount="199.99"),
+                    {
+                        "amount": None,
+                        "currency": "EUR",
+                        "counterparty_name": "Wile E Coyote",
+                        "counterparty_bic": "ZDRPLBQI",
+                        "counterparty_iban": "DE9935420810036209081725212",
+                        "description": "//TeslaMotors/Invoice/12"
+                    }
+                ]
+            )
+    ),
+    (
+            'when at least one amount to transfer is empty',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount=""),
+                    _stub_credit_transfer(amount="199.99"),
+                ]
+            )
+    ),
+    (
+            'when at least one amount to transfer has more than 2 decimal places',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount="12.56"),
+                    _stub_credit_transfer(amount="199.999"),
+                ]
+            )
+    ),
+    (
+            'when at least one amount to transfer is invalid',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[
+                    _stub_credit_transfer(amount="12.89"),
+                    _stub_credit_transfer(amount="aaaa"),
+                ]
+            )
+    ),
+    (
+            'when description is less than 10 characters',
+            _stub_bulk_transfer_payload(
+                credit_transfers=[_stub_credit_transfer(description="too short")]
+            )
+    ),
     # ('when total amount to transfer is higher than actual account balance', {
     #     "organization_bic": "INVALID_BIC",
     #     "organization_iban": "INVALID_IBAN",
