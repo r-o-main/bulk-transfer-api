@@ -19,6 +19,10 @@ class CreditTransfer(BaseModel):  # todo enforce strict mode
     counterparty_iban: str
     description: str
 
+    model_config = {
+        "extra": "forbid"
+    }
+
 
 class BulkTransferRequest(BaseModel):  # todo enforce strict mode
     # bulk_id: UUID  # todo Milestone 3
@@ -26,9 +30,22 @@ class BulkTransferRequest(BaseModel):  # todo enforce strict mode
     organization_iban: str
     credit_transfers: List[CreditTransfer]
 
+    model_config = {
+        "extra": "forbid"
+    }
 
-@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/bulk",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Bad Request"},
+        404: {"description": "Organization not found"},
+        422: {"description": "Insufficient funds"},
+    }
+)
 def create_bulk_transfer(request: BulkTransferRequest):  # todo check async
     # todo
+    # checks: first additional validation (such as amounts are positive and can be converted to int), amounts are enough, etc.
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
     return {"message": "Bulk transfer accepted", "bulk_id": str(uuid.uuid4())}
