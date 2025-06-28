@@ -16,7 +16,7 @@ client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, 
 @pytest.fixture(scope="module", autouse=True)
 def setup_bank_account(request):
     when(db).find_account(**KWARGS).thenReturn(
-        db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org")
+        db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org", balance_cents=90000000)
     )
 
 @pytest.fixture
@@ -164,42 +164,23 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
                 credit_transfers=[stub_credit_transfer(description="too short")]
             )
     ),
-    # ('when total amount to transfer is higher than actual account balance', {
-    #     "organization_bic": "INVALID_BIC",
-    #     "organization_iban": "INVALID_IBAN",
-    #     "credit_transfers": [
-    #         {
-    #             "amount": "61238",
-    #             "currency": "EUR",
-    #             "counterparty_name": "Wile E Coyote",
-    #             "counterparty_bic": "ZDRPLBQI",
-    #             "counterparty_iban": "DE9935420810036209081725212",
-    #             "description": "//TeslaMotors/Invoice/12"
-    #         },
-    #     ],
-    # }),
-    # ('when total amount to transfer is higher than actual account balance', {
-    #     "organization_bic": "INVALID_BIC",
-    #     "organization_iban": "INVALID_IBAN",
-    #     "credit_transfers": [
-    #         {
-    #             "amount": "61238",
-    #             "currency": "EUR",
-    #             "counterparty_name": "Wile E Coyote",
-    #             "counterparty_bic": "ZDRPLBQI",
-    #             "counterparty_iban": "DE9935420810036209081725212",
-    #             "description": "//TeslaMotors/Invoice/12"
-    #         },
-    #         {
-    #             "amount": "999",
-    #             "currency": "EUR",
-    #             "counterparty_name": "Bugs Bunny",
-    #             "counterparty_bic": "RNJZNTMC",
-    #             "counterparty_iban": "FR0010009380540930414023042",
-    #             "description": "2020 09 24/2020 09 25/GoldenCarrot/"
-    #         }
-    #     ]
-    # }),
+    (
+            'when total amount to transfer is higher than actual account balance (single transfer)',
+            stub_bulk_transfer_payload(
+                credit_transfers=[
+                    stub_credit_transfer(amount="900000.01"),
+                ]
+            )
+    ),
+    (
+            'when total amount to transfer is higher than actual account balance',
+            stub_bulk_transfer_payload(
+                credit_transfers=[
+                    stub_credit_transfer(amount="899005.25"),
+                    stub_credit_transfer(amount="999.1"),
+                ]
+            )
+    ),
 ])
 def test_transfers_bulk__should_return_422(assert_message, payload):
     response = client.post(url="/transfers/bulk", json=payload)

@@ -188,6 +188,12 @@ def create_bulk_transfer(request: BulkTransferRequest, session: Session = Depend
         logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
         return reply_unknown_account_error(bulk_id=bulk_id)
 
+    account_balance = account.balance_cents
+    total_transfer_amounts = sum(amounts_in_cents)
+    if total_transfer_amounts > account_balance:
+        logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient")  # todo add logging context
+        return reply_not_enough_funds_error(bulk_id=bulk_id)
+
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
     return {"message": "Bulk transfer accepted", "bulk_id": str(bulk_id)}
     # return JSONResponse(
