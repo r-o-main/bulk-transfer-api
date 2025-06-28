@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
+
+# from sqlalchemy import Select
 from sqlmodel import Session
 
 from app.models import db
@@ -72,9 +74,9 @@ class BulkTransferErrorResponse(BulkTransferSuccessResponse):
     error: ErrorDetails
 
 
-def _bulk_error(bulk_id: UUID, reason: str, error_details: str) -> JSONResponse:
+def _bulk_error(bulk_id: UUID, reason: str, error_details: str, status_code: Optional[int] = 422) -> JSONResponse:
     return JSONResponse(
-        status_code=422,
+        status_code=status_code,
         content=BulkTransferErrorResponse(
             bulk_id=str(bulk_id), message="Bulk transfer denied", error=ErrorDetails(reason=reason, details=error_details)
         ).model_dump()
@@ -100,6 +102,15 @@ def reply_amounts_invalid_format_error(bulk_id: UUID, error_details: Optional[st
         bulk_id=bulk_id,
         reason='invalid-amount',  # todo ENUM
         error_details=error_details if error_details else "All amounts should be numbers and not have more than 2 decimal places"
+    )
+
+
+def reply_unknown_account_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
+    return _bulk_error(
+        bulk_id=bulk_id,
+        status_code=404,
+        reason='unknown-account',  # todo ENUM
+        error_details=error_details if error_details else "Your account should be active"
     )
 
 
@@ -148,6 +159,18 @@ def create_bulk_transfer(request: BulkTransferRequest, session: Session = Depend
         logger.error(f"bulk_id={bulk_id} could not process request as not all amounts are > 0: {amounts_in_cents}")  # todo add logging context
         return reply_amounts_should_be_positive_error(bulk_id=bulk_id)
         # raise HTTPException(status_code=422, detail="Bulk transfer denied")
+
+    # with session.begin():
+    # statement = select(db.BankAccount).where(
+    #     db.BankAccount.bic == request.organization_bic.strip(),
+    #     db.BankAccount.iban == request.organization_iban.strip()
+    # )
+    # statement = cast(Select, statement)
+    # account = session.exec(statement).first()
+    account = db.find_account(session=session, bic=request.organization_bic, iban=request.organization_iban)
+    if not account:
+        logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
+        return reply_unknown_account_error(bulk_id=bulk_id)
 
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
     return {"message": "Bulk transfer accepted", "bulk_id": str(bulk_id)}

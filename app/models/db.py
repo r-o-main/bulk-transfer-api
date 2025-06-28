@@ -1,10 +1,11 @@
 # https://fastapi.tiangolo.com/tutorial/sql-databases/
 import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID, uuid4
 
-from sqlmodel import create_engine, SQLModel, Field, Column, DateTime
+from sqlalchemy import Select
+from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
 DATABASE_PATH = "./qonto_accounts.sqlite"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
@@ -56,3 +57,13 @@ class BulkRequest(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+
+
+def find_account(session: Session, bic: str, iban: str) -> Optional[BankAccount]:
+    statement = select(BankAccount).where(
+        BankAccount.bic == bic.strip(),
+        BankAccount.iban == iban.strip()
+    )
+    statement = cast(Select, statement)
+    account = session.exec(statement).first()
+    return account
