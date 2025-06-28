@@ -6,3 +6,4 @@ pytest
 requests
 coverage
 httpx
+sqlmodel

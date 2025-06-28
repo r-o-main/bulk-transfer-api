@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+
+from app.migrations.simple_runner import run_all_migrations
 from app.routers import transfers
 
 app = FastAPI(  # https://fastapi.tiangolo.com/reference/fastapi/
@@ -7,3 +9,7 @@ app = FastAPI(  # https://fastapi.tiangolo.com/reference/fastapi/
 )
 
 app.include_router(transfers.router, prefix="/transfers", tags=["transfers"])
+
+@app.on_event("startup")
+def on_startup():
+    run_all_migrations()

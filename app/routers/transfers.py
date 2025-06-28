@@ -2,18 +2,25 @@ import uuid
 import decimal
 import logging
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse
 # from app.models.schemas import BulkTransferRequest
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
+from sqlmodel import Session
 
+from app.models import db
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter()  # https://fastapi.tiangolo.com/reference/apirouter
+
+
+def get_session():
+    with Session(db.engine) as session:
+        yield session
 
 
 class CreditTransfer(BaseModel):  # todo enforce strict mode
@@ -119,7 +126,7 @@ def to_cents(amount_in_euros_str: str) -> int:
         422: {"model": BulkTransferErrorResponse, "description": "Bulk transfer denied"},  # todo list of reasons (provide details in response) + handle mismatch patload vs Pydantic model
     }
 )
-def create_bulk_transfer(request: BulkTransferRequest):  # todo check async
+def create_bulk_transfer(request: BulkTransferRequest, session: Session = Depends(get_session)):  # todo check async
     """
     /docs
     todo docstring
@@ -127,9 +134,6 @@ def create_bulk_transfer(request: BulkTransferRequest):  # todo check async
     # todo
     bulk_id = uuid.uuid4()  # todo handle idempotency
     # checks: first additional validation (such as amounts are positive and can be converted to int), amounts are enough, etc.
-    # decimal_context = decimal.getcontext()
-    # decimal_context.prec = 2
-    # decimal_context.rounding = decimal.ROUND_HALF_UP
 
     amounts_in_cents = []
     try:
