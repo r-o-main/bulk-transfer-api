@@ -5,6 +5,7 @@ from mockito import when, KWARGS
 
 from app.main import app
 from app.models import db
+from app.routers.transfers import MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST
 
 from tests.faker import stub_credit_transfer, stub_bulk_transfer_payload, load_sample_payload
 
@@ -202,14 +203,22 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
 ])
 def test_transfers_bulk__should_return_422(assert_message, payload):
     response = client.post(url="/transfers/bulk", json=payload)
-    print(f"++++ response={response.json()}")
+    print(f"response={response.json()}")
     assert response.status_code == 422, f"{assert_message}: {response.json()}"
 
 
 def test_transfers_bulk__when_unknown_organization__should_return_404(unknown_bank_account):
     response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload())
-    print(f"++++ response={response.json()}")
+    print(f"response={response.json()}")
     assert response.status_code == 404
+
+
+def test_transfers_bulk__when_too_many_transfers__should_return_413():
+    response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload(
+        credit_transfers=[stub_credit_transfer()] * (MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST + 1), verbose=False
+    ))
+    print(f"response={response.json()}")
+    assert response.status_code == 413
 
 
 # todo test rounding strategy: "10.05"

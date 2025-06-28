@@ -28,6 +28,7 @@ def stub_bulk_transfer_payload(
         credit_transfers: Optional[List[Dict]] = None,
         key_to_remove: Optional[str] = None,
         key_to_add: Optional[str] = None,
+        verbose: bool = True
 ):
     stubbed_bulk_transfer_payload = {
         "organization_bic": "OIVUSCLQXXX",
@@ -38,7 +39,8 @@ def stub_bulk_transfer_payload(
         del stubbed_bulk_transfer_payload[key_to_remove]
     if key_to_add is not None:
         stubbed_bulk_transfer_payload[key_to_add] = "whatever"
-    print(f'payload={stubbed_bulk_transfer_payload}')
+    if verbose:
+        print(f'payload={stubbed_bulk_transfer_payload}')
     return stubbed_bulk_transfer_payload
 
 

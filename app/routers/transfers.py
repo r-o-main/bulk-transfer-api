@@ -14,6 +14,8 @@ from sqlmodel import Session
 
 from app.models import db
 
+MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST = 1000
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,6 +116,15 @@ def reply_unknown_account_error(bulk_id: UUID, error_details: Optional[str] = No
     )
 
 
+def reply_too_many_transfers_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
+    return _bulk_error(
+        bulk_id=bulk_id,
+        status_code=413,
+        reason='too-many-transfers',  # todo ENUM
+        error_details=error_details if error_details else f"Too many transfers requested (max={MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST})"
+    )
+
+
 def to_cents(amount_in_euros_str: str) -> int:
     try:
         amount_in_euros = decimal.Decimal(amount_in_euros_str)
@@ -145,6 +156,11 @@ def create_bulk_transfer(request: BulkTransferRequest, session: Session = Depend
     # todo
     bulk_id = uuid.uuid4()  # todo handle idempotency
     # checks: first additional validation (such as amounts are positive and can be converted to int), amounts are enough, etc.
+
+    if len(request.credit_transfers) > MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST:
+        logger.error(f"bulk_id={bulk_id} could not process request as too many transfers requested "
+                     f"({len(request.credit_transfers)} > limit={MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST})")  # todo add logging context
+        return reply_too_many_transfers_error(bulk_id=bulk_id)
 
     amounts_in_cents = []
     try:
