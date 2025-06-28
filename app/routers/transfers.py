@@ -122,6 +122,7 @@ def to_cents(amount_in_euros_str: str) -> int:
 def create_bulk_transfer(request: BulkTransferRequest):  # todo check async
     """
     /docs
+    todo docstring
     """
     # todo
     bulk_id = uuid.uuid4()  # todo handle idempotency
