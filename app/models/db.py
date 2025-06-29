@@ -1,5 +1,6 @@
 # https://fastapi.tiangolo.com/tutorial/sql-databases/
 import datetime
+import logging
 from enum import Enum
 from typing import Optional, cast
 from uuid import UUID, uuid4
@@ -8,6 +9,10 @@ from sqlalchemy import Select
 from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
 from app.models import adapter
+
+
+logger = logging.getLogger(__name__)
+
 
 DATABASE_PATH = "./qonto_accounts.sqlite"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
@@ -84,10 +89,29 @@ def reserve_funds(session: Session, account: BankAccount, total_transfer_amounts
     session.add(account)
 
 
-def finalize_bulk_transfer(session: Session, account: BankAccount, total_transfer_amounts: int):
+def finalize_bulk_transfer(session: Session, bulk_request_uuid: UUID, account: BankAccount, total_transfer_amounts: int):
+    statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid).with_for_update()
+    # statement = select(BulkRequest).where(BulkRequest.id == bulk_request_id).with_for_update()
+    statement = cast(Select, statement)
+    bulk_request = session.exec(statement).first()
+    logger.error(f"++++ DEBUG bulk_id={bulk_request_uuid} FINALIZE account_id={account.id} total_transfer_amounts={total_transfer_amounts}")
+
+    if not bulk_request:
+        logger.info(f"bulk_id={bulk_request_uuid} not found")
+        return
+    if bulk_request.status in [RequestStatus.FAILED, RequestStatus.COMPLETED]:
+        logger.info(f"bulk_id={bulk_request_uuid} already finalized status={bulk_request.status}")
+        return
+
     account.ongoing_transfer_cents -= total_transfer_amounts
     account.balance_cents -= total_transfer_amounts
-    session.add(account)
+    # session.add(account)
+
+    bulk_request.status = RequestStatus.COMPLETED
+    # todo update counters
+    logger.error(f"++++ DEBUG bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
+
+    session.add_all([bulk_request, account])
 
 
 def create_transfer_transaction(

@@ -58,7 +58,7 @@ def when_unknown_bank_account(request):
 def when_process_request_successfully(request):
     # when(db).find_bulk_request(**KWARGS).thenReturn(None)
     when(db).reserve_funds(**KWARGS)
-    when(db).create_bulk_request(**KWARGS)
+    when(db).create_bulk_request(**KWARGS).thenReturn(mock({'request_uuid': uuid.uuid4()}))
     when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
         "id": 1,
         "transfer_uuid": uuid.uuid4(),

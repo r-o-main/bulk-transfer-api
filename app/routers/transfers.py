@@ -153,13 +153,11 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             return reply_unknown_account_error(bulk_id=bulk_id)
 
         total_transfer_amounts_cents = sum(amounts_in_cents)
-        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} | account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
+                     f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
         if total_transfer_amounts_cents + account.ongoing_transfer_cents > account.balance_cents:
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
             return reply_not_enough_funds_error(bulk_id=bulk_id)
-
-
-        # todo check UUIDs and skip
 
         bulk_request = db.create_bulk_request(
             session=session,
@@ -167,17 +165,34 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             bank_account_id=account.id,
             total_amounts_cents=total_transfer_amounts_cents
         )
+        session.flush()
 
         # Reserve funds
         # account.ongoing_transfer_cents += total_transfer_amounts_cents
         # session.add(account)
         db.reserve_funds(session=session, account=account, total_transfer_amounts=total_transfer_amounts_cents)
+
+    # simulate async
+    with session.begin():
+        account = db.find_account_for_update(session=session, bic=request.organization_bic,
+                                             iban=request.organization_iban)
+        if not account:
+            logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
+            return reply_unknown_account_error(bulk_id=bulk_id)
+        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
+                     f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
         for credit_transfer in request.credit_transfers:
             transaction = db.create_transfer_transaction(
                 session=session, bank_account_id=account.id, credit_transfer=credit_transfer, bulk_request_id=bulk_id
             )
-            logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-        db.finalize_bulk_transfer(session=session, account=account, total_transfer_amounts=total_transfer_amounts_cents)
+            # logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
+            logger.error(f"++++ DEBUG bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
+        db.finalize_bulk_transfer(
+            session=session,
+            bulk_request_uuid=bulk_request.request_uuid,
+            account=account,
+            total_transfer_amounts=total_transfer_amounts_cents
+        )
 
 
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
