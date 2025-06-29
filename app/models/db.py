@@ -100,6 +100,12 @@ def reserve_funds(session: Session, account: BankAccount, total_transfer_amounts
 
 #--- Transactions
 
+def find_transfer_transaction(session: Session, transfer_uuid: UUID) -> Optional[Transaction]:
+    statement = select(Transaction).where(Transaction.transfer_uuid == transfer_uuid)
+    statement = cast(Select, statement)
+    return session.exec(statement).first()
+
+
 def create_transfer_transaction(
         # session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer, bulk_request_id: Optional[UUID] = None
         session: Session, transfer_job_data: TransferJob

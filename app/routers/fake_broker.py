@@ -1,3 +1,4 @@
+from collections import deque
 from uuid import UUID
 
 from fastapi import APIRouter, status, Depends, HTTPException
@@ -18,12 +19,14 @@ router = APIRouter()
 # Fake "topics": all jobs of same type are in the same list (FIFO).
 # With a real message broker, the different bulk requests could be processed
 # in parallel, using the bulk_request_uuid as routing scope for instance.
-TRANSFER_JOB_QUEUE = []
-FINALIZE_BULK_JOB_QUEUE = []
+TRANSFER_JOB_QUEUE = deque()
+FINALIZE_BULK_JOB_QUEUE = deque()
+RECONCILIATION_JOB_QUEUE = deque()
 
 
 @router.post("/transfer", status_code=status.HTTP_201_CREATED)
-async def enqueue_transfer_job(transfer_job: TransferJob):
+# async def enqueue_transfer_job(transfer_job: TransferJob):
+def enqueue_transfer_job(transfer_job: TransferJob):
     TRANSFER_JOB_QUEUE.append(transfer_job)
     logger.info(f"Queued transfer job {transfer_job.transfer_uuid}: {transfer_job} "
                 f"[queue:{len(TRANSFER_JOB_QUEUE)} jobs]")
@@ -36,15 +39,17 @@ async def enqueue_transfer_job(transfer_job: TransferJob):
 
 # @router.get("/transfer", response_model=TransferJob, status_code=status.HTTP_200_OK)
 @router.get("/transfer", status_code=status.HTTP_200_OK)
-async def consume_transfer_job(session: Session = Depends(db.get_session)):
+# async def consume_transfer_job(session: Session = Depends(db.get_session)):
+def consume_transfer_job(session: Session = Depends(db.get_session)):
     try:
-        transfer_job = TRANSFER_JOB_QUEUE.pop()
+        transfer_job = TRANSFER_JOB_QUEUE.popleft()
         logger.info(f"Consuming transfer job {transfer_job.transfer_uuid}: {transfer_job} "
                     f"[queue: pending {len(TRANSFER_JOB_QUEUE)} jobs to be processed]")
     except IndexError:
         raise HTTPException(status_code=404, detail="No transfer job in queue")
 
-    transaction = await transfer_service.process(session=session, transfer_job=transfer_job)
+    # transaction = await transfer_service.process(session=session, transfer_job=transfer_job)
+    transaction = transfer_service.process(session=session, transfer_job=transfer_job)
     if not transaction:
         logger.warning(f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted.")
         return JSONResponse(
@@ -68,7 +73,8 @@ async def consume_transfer_job(session: Session = Depends(db.get_session)):
 
 
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
-async def enqueue_finalize_bulk_job(bulk_job: BulkJob):
+# async def enqueue_finalize_bulk_job(bulk_job: BulkJob):
+def enqueue_finalize_bulk_job(bulk_job: BulkJob):
     FINALIZE_BULK_JOB_QUEUE.append(bulk_job)
     logger.info(f"Queued bulk job {bulk_job.bulk_request_uuid}: {bulk_job} "
                 f"[queue: {len(FINALIZE_BULK_JOB_QUEUE)} jobs]")
@@ -80,14 +86,15 @@ async def enqueue_finalize_bulk_job(bulk_job: BulkJob):
 
 # @router.get("/bulk", response_model=BulkJob, status_code=status.HTTP_200_OK)
 @router.get("/bulk", status_code=status.HTTP_200_OK)
-async def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
+# async def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
+def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
     try:
-        bulk_job = FINALIZE_BULK_JOB_QUEUE.pop()
+        bulk_job = FINALIZE_BULK_JOB_QUEUE.popleft()
         logger.info(f"Consuming bulk job {bulk_job.bulk_request_uuid}: {bulk_job} "
                     f"[queue: pending {len(FINALIZE_BULK_JOB_QUEUE)} jobs to be processed]")
     except IndexError:
         raise HTTPException(status_code=404, detail="No bulk job in queue")
-    # return bulk_job
+
     with session.begin():
         account: db.BankAccount | None = session.get(db.BankAccount, bulk_job.bank_account_id)
         if not account:
@@ -127,6 +134,7 @@ async def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
         # session.commit()
         if final_bulk_request is None:
             logger.warning(f"Processing of bulk job {bulk_job.bulk_request_uuid} failed or was aborted.")
+            # TODO queue reconciliation job and send ID in the response
             return JSONResponse(
                 status_code=422, content={
                     "type": "finalize-bulk",
@@ -134,7 +142,8 @@ async def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
                     "bulk_request_uuid": bulk_job.bulk_request_uuid,
                     "total_transferred_amounts_cents": bulk_request.total_amount_cents,
                     "processed_amounts_cents": bulk_request.processed_amount_cents,
-                    "details": f"Processing of bulk job failed or was aborted"
+                    "details": f"Processing of bulk job failed or was aborted",
+                    "reconciliation_job_uuid": "todo"
                 }
             )
 

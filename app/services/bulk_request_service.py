@@ -13,7 +13,8 @@ from app.utils.log_formatter import get_logger
 logger = get_logger(__name__)
 
 
-async def schedule_transfers(
+# async def schedule_transfers(
+def schedule_transfers(
         session: Session, bulk_request_uuid: str, account: db.BankAccount, total_transfer_amounts_cents: int, credit_transfers: List[CreditTransfer]
 ) -> db.BulkRequest:
     bulk_request = db.create_bulk_request(
@@ -27,7 +28,8 @@ async def schedule_transfers(
 
     fake_broker_client = FakeBrokerClient()
     for credit_transfer in credit_transfers:
-        response = await fake_broker_client.queue_transfer_job(
+        # response = await fake_broker_client.queue_transfer_job(
+        response = fake_broker_client.queue_transfer_job(
             job=build_transfer_job(
                 bulk_request_uuid=bulk_request_uuid,
                 transfer_uuid=str(uuid4()),
@@ -104,7 +106,7 @@ def cancel_bulk_transfer(
 
     if bulk_request.status == db.RequestStatus.FAILED:
         logger.info(f"bulk_id={bulk_request_uuid} already cancelled status={bulk_request.status}")
-        return None
+        return bulk_request
 
     account.ongoing_transfer_cents -= bulk_request.total_amount_cents
     # todo add safety guards on ongoing_transfer_cents > 0

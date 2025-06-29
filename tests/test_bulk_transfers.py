@@ -4,6 +4,7 @@ import mockito
 import pytest
 
 from fastapi.testclient import TestClient
+from httpx import AsyncClient
 from mockito import when, KWARGS, mock
 
 from app.services import bulk_request_service
@@ -69,7 +70,8 @@ def when_process_request_successfully(request):
     when(bulk_request_service).finalize_bulk_transfer(**KWARGS)
 
 
-@pytest.mark.skip(reason="pending fake broker double")
+# @pytest.mark.skip(reason="require async client")
+# @pytest.mark.asyncio
 @pytest.mark.parametrize("sample_file", ["sample_valid_payload_1.json", "sample_valid_payload_2.json"])
 def test_transfers_bulk__when_valid_payload__should_return_201(
         when_account_valid, when_bulk_request_not_already_processed, when_process_request_successfully,
@@ -77,6 +79,10 @@ def test_transfers_bulk__when_valid_payload__should_return_201(
 ):
     sample_payload = load_sample_payload(resource_name=sample_file)
     response = client.post(url="/transfers/bulk", json=sample_payload)
+    # from app.main import app
+    # async with AsyncClient(app=app, base_url="http://test") as client:
+    # # async with AsyncClient(base_url="http://test") as client:
+    #     response = await client.post("/transfers/bulk", json=sample_payload)
 
     assert response.status_code == 201
     response_dict = response.json()

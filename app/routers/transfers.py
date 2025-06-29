@@ -115,7 +115,8 @@ def _validate_request_id(request_id) -> bool:
         422: {"model": adapter.BulkTransferErrorResponse, "description": "Bulk transfer denied"},  # todo list of reasons (provide details in response) + handle mismatch patload vs Pydantic model
     }
 )
-async def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):  # todo check async
+# async def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):
+def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):  # todo check async
     """
     /docs
     todo docstring
@@ -159,8 +160,8 @@ async def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Se
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
             return reply_not_enough_funds_error(bulk_id=bulk_id)
 
-        # bulk_request = bulk_request_service.schedule_transfers(
-        await bulk_request_service.schedule_transfers(
+        bulk_request_service.schedule_transfers(
+        # await bulk_request_service.schedule_transfers(
             session=session,
             bulk_request_uuid=str(bulk_id),
             account=account,
