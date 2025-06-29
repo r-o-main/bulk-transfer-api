@@ -11,18 +11,18 @@ from sqlmodel import Session
 from app.amounts.converters import to_cents
 from app.models import adapter
 from app.models import db
+from app.models.db import get_session
 
 MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST = 1000
 
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.DEBUG)
+# logger = logging.getLogger(__name__)
+# from app.utils.log_formatter import logger
+from app.utils.log_formatter import get_logger
+logger = get_logger(__name__)
 
 
 router = APIRouter()  # https://fastapi.tiangolo.com/reference/apirouter
-
-
-def get_session():
-    with Session(db.engine) as session:
-        yield session
 
 
 def _bulk_error(bulk_id: str, reason: str, error_details: str, status_code: Optional[int] = 422) -> JSONResponse:
@@ -153,7 +153,7 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             return reply_unknown_account_error(bulk_id=bulk_id)
 
         total_transfer_amounts_cents = sum(amounts_in_cents)
-        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
+        logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
                      f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
         if total_transfer_amounts_cents + account.ongoing_transfer_cents > account.balance_cents:
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
@@ -175,24 +175,36 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
     # simulate async
     with session.begin():
         account = db.find_account_for_update(session=session, bic=request.organization_bic,
-                                             iban=request.organization_iban)
+                                             iban=request.organization_iban)  # todo by id
         if not account:
             logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
             return reply_unknown_account_error(bulk_id=bulk_id)
-        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
+
+        logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
                      f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+
         for credit_transfer in request.credit_transfers:
             transaction = db.create_transfer_transaction(
                 session=session, bank_account_id=account.id, credit_transfer=credit_transfer, bulk_request_id=bulk_id
             )
             # logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-            logger.error(f"++++ DEBUG bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-        db.finalize_bulk_transfer(
-            session=session,
-            bulk_request_uuid=bulk_request.request_uuid,
-            account=account,
-            total_transfer_amounts=total_transfer_amounts_cents
-        )
+            logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
+
+            db.finalize_bulk_transfer(
+                session=session,
+                bulk_request_uuid=bulk_request.request_uuid,
+                account=account,
+                total_transfer_amounts_cents=total_transfer_amounts_cents,
+                transferred_amount_cents=credit_transfer.amount_to_cents()
+            )
+
+        # db.finalize_bulk_transfer(
+        #     session=session,
+        #     bulk_request_uuid=bulk_request.request_uuid,
+        #     account=account,
+        #     total_transfer_amounts_cents=total_transfer_amounts_cents,
+        #     transferred_amount_cents=0  # todo add transaction amount
+        # )
 
 
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}

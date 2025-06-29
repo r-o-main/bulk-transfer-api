@@ -6,6 +6,7 @@ CREATE TABLE bulk_requests (
     bank_account_id INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING, PROCESSING, COMPLETED, FAILED
     total_amount_cents INTEGER NOT NULL DEFAULT 0,
+    processed_amount_cents INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME NULL
 );

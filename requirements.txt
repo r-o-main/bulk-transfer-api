@@ -8,3 +8,4 @@ coverage
 httpx
 sqlmodel
 mockito
+colorlog

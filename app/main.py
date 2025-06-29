@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.migrations.simple_runner import run_all_migrations
-from app.routers import transfers
+from app.routers import transfers, fake_broker
 
 app = FastAPI(  # https://fastapi.tiangolo.com/reference/fastapi/
     title="Qonto Bulk Transfer API",
@@ -9,6 +9,8 @@ app = FastAPI(  # https://fastapi.tiangolo.com/reference/fastapi/
 )
 
 app.include_router(transfers.router, prefix="/transfers", tags=["transfers"])
+app.include_router(fake_broker.router, prefix="/internal/jobs", tags=["Fake Broker"])
+
 
 @app.on_event("startup")
 def on_startup():
