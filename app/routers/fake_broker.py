@@ -48,18 +48,19 @@ def consume_transfer_job(session: Session = Depends(db.get_session)):
     except IndexError:
         raise HTTPException(status_code=404, detail="No transfer job in queue")
 
-    transaction = transfer_service.process(session=session, transfer_job=transfer_job)
-    if not transaction:
-        logger.warning(f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted.")
-        return JSONResponse(
-            status_code=422, content={
-                "status": "failed",
-                "transfer_uuid": transfer_job.transfer_uuid,
-                "bulk_request_uuid": transfer_job.bulk_request_uuid,
-                "type": "process-transfer",
-                "details": f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted"
-            }
-        )
+    with session.begin():
+        transaction = transfer_service.process(session=session, transfer_job=transfer_job)
+        if not transaction:
+            logger.warning(f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted.")
+            return JSONResponse(
+                status_code=422, content={
+                    "status": "failed",
+                    "transfer_uuid": transfer_job.transfer_uuid,
+                    "bulk_request_uuid": transfer_job.bulk_request_uuid,
+                    "type": "process-transfer",
+                    "details": f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted"
+                }
+            )
 
     return {
         "status": "processed",

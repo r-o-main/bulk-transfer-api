@@ -33,8 +33,16 @@ router = APIRouter()  # https://fastapi.tiangolo.com/reference/apirouter
 )
 def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):
     """
-    /docs
-    todo docstring
+    Create a bulk transfer request for multiple credit transfers.
+
+    Accepts up to 1000 individual credit transfers and processes them asynchronously.
+    Validates account balance, reserves funds, and queues individual transfers for processing.
+
+    Note:
+    - Individual transfer job queues a bulk request job when done to finalize the bulk transfer.
+    - You can use internal endpoints to process queued jobs:
+        - GET /internal/jobs/transfer (process individual transfers)
+        - GET /internal/jobs/bulk (finalize bulk requests)
     """
     if not _validate_request_id(request_id=request.request_id):
         return reply_invalid_request_id_error(bulk_id=request.request_id)

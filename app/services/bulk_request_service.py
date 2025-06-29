@@ -20,6 +20,27 @@ def schedule_transfers(
         total_transfer_amounts_cents: int,
         credit_transfers: List[CreditTransfer]
 ) -> db.BulkRequest:
+    """
+    Schedule all transfers in a bulk request for asynchronous processing.
+
+    Creates bulk request record, reserves funds using ongoing_transfer_cents,
+    and queues individual transfer jobs.
+
+    Args:
+        session: Database session (must be in transaction)
+        bulk_request_uuid: Unique identifier for the bulk request
+        account: Account to debit (must be locked with FOR UPDATE)
+        total_transfer_amounts_cents: Total amount to reserve
+        credit_transfers: List of individual transfers to queue
+
+    Returns:
+        Created BulkRequest record
+
+    Side Effects:
+        - Creates BulkRequest record with PENDING status
+        - Increases account.ongoing_transfer_cents by total amount
+        - Queues TransferJob for each credit transfer
+    """
     bulk_request = db.create_bulk_request(
         session=session,
         bulk_request_uuid=UUID(bulk_request_uuid),
@@ -51,6 +72,28 @@ def finalize_bulk_transfer(
         account: db.BankAccount,
         single_transferred_amount_cents: int
 ) -> Optional[db.BulkRequest]:
+    """
+    Update bulk request progress and complete if all transfers processed.
+
+    Called after each successful transfer to track progress. When the last
+    transfer completes, finalizes the bulk request by updating account balance
+    and status. Uses database locking to prevent race conditions.
+
+    Args:
+        session: Database session (must be in transaction)
+        bulk_request: Bulk request to update (must be locked with FOR UPDATE)
+        account: Account being debited
+        single_transferred_amount_cents: Amount of this individual transfer
+
+    Returns:
+        Updated BulkRequest, None if already finalized or not found
+
+    Financial Logic:
+        When last transfer completes:
+        - Deducts total_amount_cents from account.balance_cents
+        - Clears account.ongoing_transfer_cents
+        - Sets status to COMPLETED
+    """
     bulk_request_uuid = bulk_request.request_uuid
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE account_id={account.id} "
                 f"single_transferred_amount_cents={single_transferred_amount_cents}")
@@ -89,6 +132,23 @@ def cancel_bulk_transfer(
         bulk_request: db.BulkRequest,
         account: db.BankAccount
 ) -> Optional[db.BulkRequest]:
+    """
+    Cancel a bulk transfer request.
+    Called when an individual transfer has failed (all or nothing).
+
+    Args:
+        session: Database session (must be in transaction)
+        bulk_request: Bulk request to cancel (must be locked with FOR UPDATE)
+        account: Account being debited
+
+    Returns:
+        Updated BulkRequest, None if already cancelled or not found
+
+    Financial Logic:
+        When bulk transfer request is cancelled:
+        - Clears account.ongoing_transfer_cents
+        - Sets status to CANCELLED
+    """
     bulk_request_uuid = bulk_request.request_uuid
     logger.info(f"bulk_id={bulk_request_uuid} CANCEL account_id={account.id} "
                 f"total_transfer_amounts={bulk_request.total_amount_cents}")

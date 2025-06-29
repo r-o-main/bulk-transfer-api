@@ -8,7 +8,7 @@ app = FastAPI(  # https://fastapi.tiangolo.com/reference/fastapi/
     version="0.1.0"
 )
 
-app.include_router(transfers.router, prefix="/transfers", tags=["transfers"])
+app.include_router(transfers.router, prefix="/transfers", tags=["Bulk Transfers"])
 app.include_router(fake_broker.router, prefix="/internal/jobs", tags=["Fake Broker"])
 
 
