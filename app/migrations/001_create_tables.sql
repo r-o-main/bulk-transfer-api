@@ -5,10 +5,11 @@ CREATE TABLE bank_accounts (
     organization_name TEXT NOT NULL,
     iban TEXT NOT NULL,
     bic TEXT NOT NULL,
-    balance_cents INTEGER NOT NULL
+    balance_cents INTEGER NOT NULL,
+    ongoing_transfer_cents INTEGER NOT NULL
 );
 
-INSERT INTO bank_accounts VALUES(1,'ACME Corp',10000000,'FR10474608000002006107XXXXX','OIVUSCLQXXX');
+INSERT INTO bank_accounts VALUES(1,'ACME Corp','FR10474608000002006107XXXXX','OIVUSCLQXXX',10000000,0);
 
 DROP TABLE IF EXISTS transactions;
 
