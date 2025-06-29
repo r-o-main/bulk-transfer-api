@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from typing import Optional, List, Dict
 
 
@@ -31,6 +32,7 @@ def stub_bulk_transfer_payload(
         verbose: bool = True
 ):
     stubbed_bulk_transfer_payload = {
+        "request_id": str(uuid.uuid4()),
         "organization_bic": "OIVUSCLQXXX",
         "organization_iban": "FR10474608000002006107XXXXX",
         "credit_transfers": credit_transfers if credit_transfers is not None else []
@@ -47,5 +49,6 @@ def stub_bulk_transfer_payload(
 def load_sample_payload(resource_name):
     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), f"resources/{resource_name}")) as resource:
         payload = json.load(resource)
+        payload["request_id"] = str(uuid.uuid4())
         print(f"payload={payload}")
         return payload

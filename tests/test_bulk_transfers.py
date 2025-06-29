@@ -1,5 +1,6 @@
 import uuid
 
+import mockito
 import pytest
 
 from fastapi.testclient import TestClient
@@ -15,12 +16,31 @@ from tests.faker import stub_credit_transfer, stub_bulk_transfer_payload, load_s
 client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, https://fastapi.tiangolo.com/tutorial/testing/
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_bank_account(request):
+# @pytest.fixture(scope="module", autouse=True)
+# def setup(request):
+#     when(db).find_account_for_update(**KWARGS).thenReturn(
+#         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
+#                        balance_cents=90000000, ongoing_transfer_cents=0)
+#     )
+#     when(db).find_bulk_request(**KWARGS)
+
+@pytest.fixture
+def when_account_valid(request):
     when(db).find_account_for_update(**KWARGS).thenReturn(
         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
                        balance_cents=90000000, ongoing_transfer_cents=0)
     )
+
+@pytest.fixture
+def when_bulk_request_not_already_processed(request):
+    when(db).find_bulk_request(**KWARGS).thenReturn(None)
+
+
+@pytest.fixture(autouse=True)
+def unstub_between_tests():
+    yield
+    mockito.unstub()
+
 
 @pytest.fixture
 def when_ongoing_transfer_cents(request):
@@ -33,9 +53,24 @@ def when_ongoing_transfer_cents(request):
 def when_unknown_bank_account(request):
     when(db).find_account_for_update(**KWARGS).thenReturn(None)
 
-@pytest.fixture(scope="module", autouse=True)
-def fake_session():
-    return mock()
+
+@pytest.fixture
+def when_process_request_successfully(request):
+    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
+    when(db).reserve_funds(**KWARGS)
+    when(db).create_bulk_request(**KWARGS)
+    when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
+        "id": 1,
+        "transfer_uuid": uuid.uuid4(),
+        "status": db.RequestStatus.PENDING
+    })
+    )
+    when(db).finalize_bulk_transfer(**KWARGS)
+
+
+# @pytest.fixture(scope="module", autouse=True)
+# def fake_session():
+#     return mock()
 
 
 # @pytest.fixture
@@ -44,29 +79,22 @@ def fake_session():
 
 
 @pytest.mark.parametrize("sample_file", ["sample_valid_payload_1.json", "sample_valid_payload_2.json"])
-def test_transfers_bulk__when_valid_payload__should_return_201(sample_file):
+def test_transfers_bulk__when_valid_payload__should_return_201(
+        when_account_valid, when_bulk_request_not_already_processed, when_process_request_successfully,
+        sample_file
+):
     # when(db).find_account(**KWARGS).thenReturn(
     #     db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org")
     # )
-    when(db).reserve_funds(**KWARGS)
-    when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
-        "id": 1,
-        "transfer_uuid": uuid.uuid4(),
-        "status": db.RequestStatus.PENDING
-    })
-        # db.Transaction(
-        #     id=1,
-        #     transfer_uuid=uuid.uuid4(),
-        #     counterparty_name="Bugs Bunny",
-        #     counterparty_iban="FR0010009380540930414023042",
-        #     counterparty_bic="RNJZNTMC",
-        #     amount_cents=-100,
-        #     amount_currency="EUR",
-        #     bank_account_id=1,
-        #     description="2020/DuckSeason/"
-        # )
-    )
-    when(db).finalize_bulk_transfer(**KWARGS)
+    # when(db).reserve_funds(**KWARGS)
+    # when(db).create_bulk_request(**KWARGS)
+    # when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
+    #     "id": 1,
+    #     "transfer_uuid": uuid.uuid4(),
+    #     "status": db.RequestStatus.PENDING
+    # })
+    # )
+    # when(db).finalize_bulk_transfer(**KWARGS)
 
     sample_payload = load_sample_payload(resource_name=sample_file)
     response = client.post(url="/transfers/bulk", json=sample_payload)
@@ -74,6 +102,8 @@ def test_transfers_bulk__when_valid_payload__should_return_201(sample_file):
     assert response.status_code == 201
     response_dict = response.json()
     assert "bulk_id" in response_dict
+
+    # todo verify
 
 
 @pytest.mark.parametrize("assert_message, payload", [
@@ -225,13 +255,18 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             )
     ),
 ])
-def test_transfers_bulk__should_return_422(assert_message, payload):
+def test_transfers_bulk__should_return_422(
+        when_account_valid, when_bulk_request_not_already_processed,
+        assert_message, payload
+):
     response = client.post(url="/transfers/bulk", json=payload)
     print(f"response={response.json()}")
     assert response.status_code == 422, f"{assert_message}: {response.json()}"
 
 
-def test_transfers_bulk__when_ongoing_transfers_and_balance_not_enough__should_return_422(when_ongoing_transfer_cents):
+def test_transfers_bulk__when_ongoing_transfers_and_balance_not_enough__should_return_422(
+        when_account_valid, when_bulk_request_not_already_processed, when_ongoing_transfer_cents
+):
     response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload(
         credit_transfers=[stub_credit_transfer(amount_in_euros="3999")]
     ))
@@ -239,13 +274,49 @@ def test_transfers_bulk__when_ongoing_transfers_and_balance_not_enough__should_r
     assert response.status_code == 422, f"{response.json()}"
 
 
-def test_transfers_bulk__when_unknown_organization__should_return_404(when_unknown_bank_account):
-    response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload())
+@pytest.mark.parametrize("assert_message, invalid_request_id", [
+    ('when not a uuid', 'not-a-uuid'),
+    ('when too short', '8348f0e-cf70-4a32-8dce-d6c6467ca590'),
+])
+def test_transfers_bulk__when_invalid_request_uuid__should_return_422(
+        when_account_valid, when_bulk_request_not_already_processed,
+        assert_message, invalid_request_id
+):
+    payload = stub_bulk_transfer_payload()
+    payload["request_id"] = invalid_request_id
+    response = client.post(url="/transfers/bulk", json=payload)
     print(f"response={response.json()}")
-    assert response.status_code == 404
+    assert response.status_code == 422, f"{assert_message}: {response.json()}"
 
 
-def test_transfers_bulk__when_too_many_transfers__should_return_413():
+def test_transfers_bulk__when_already_processed__should_return_422(
+        when_account_valid, when_bulk_request_not_already_processed, when_process_request_successfully
+):
+    bulk_request_id = str(uuid.uuid4())
+    payload = stub_bulk_transfer_payload()
+    payload["request_id"] = bulk_request_id
+    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
+    # when(db).reserve_funds(**KWARGS)
+    # when(db).create_bulk_request(**KWARGS)
+    # when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
+    #     "id": 1,
+    #     "transfer_uuid": uuid.uuid4(),
+    #     "status": db.RequestStatus.PENDING
+    # })
+    # )
+    # when(db).finalize_bulk_transfer(**KWARGS)
+    response = client.post(url="/transfers/bulk", json=payload)
+    assert response.status_code == 201
+
+    when(db).find_bulk_request(**KWARGS).thenReturn(mock())
+    response = client.post(url="/transfers/bulk", json=payload)
+    print(f"response={response.json()}")
+    assert response.status_code == 422
+
+
+def test_transfers_bulk__when_too_many_transfers__should_return_413(
+        when_account_valid, when_bulk_request_not_already_processed
+):
     response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload(
         credit_transfers=[stub_credit_transfer()] * (MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST + 1), verbose=False
     ))
@@ -253,4 +324,12 @@ def test_transfers_bulk__when_too_many_transfers__should_return_413():
     assert response.status_code == 413
 
 
-# todo test rounding strategy: "10.05"
+def test_transfers_bulk__when_unknown_organization__should_return_404(
+        when_unknown_bank_account, when_bulk_request_not_already_processed
+):
+# def test_transfers_bulk__when_unknown_organization__should_return_404():
+    # when(db).find_account_for_update(**KWARGS).thenReturn(None)
+    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
+    response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload())
+    print(f"response={response.json()}")
+    assert response.status_code == 404

@@ -25,11 +25,11 @@ def get_session():
         yield session
 
 
-def _bulk_error(bulk_id: UUID, reason: str, error_details: str, status_code: Optional[int] = 422) -> JSONResponse:
+def _bulk_error(bulk_id: str, reason: str, error_details: str, status_code: Optional[int] = 422) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content=adapter.BulkTransferErrorResponse(
-            bulk_id=str(bulk_id),
+            bulk_id=bulk_id,
             message="Bulk transfer denied",
             error=adapter.ErrorDetails(reason=reason, details=error_details)
         ).model_dump()
@@ -37,14 +37,14 @@ def _bulk_error(bulk_id: UUID, reason: str, error_details: str, status_code: Opt
 
 def reply_not_enough_funds_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
-        bulk_id=bulk_id,
+        bulk_id=str(bulk_id),
         reason='insufficient-account-balance',  # todo ENUM
         error_details=error_details if error_details else "Not enough funds"
     )
 
 def reply_amounts_should_be_positive_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
-        bulk_id=bulk_id,
+        bulk_id=str(bulk_id),
         reason='negative-or-null-amounts',  # todo ENUM
         error_details=error_details if error_details else "All amounts should be strictly greater than zero"
     )
@@ -52,7 +52,7 @@ def reply_amounts_should_be_positive_error(bulk_id: UUID, error_details: Optiona
 
 def reply_amounts_invalid_format_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
-        bulk_id=bulk_id,
+        bulk_id=str(bulk_id),
         reason='invalid-amount',  # todo ENUM
         error_details=error_details if error_details else "All amounts should be numbers and not have more than 2 decimal places"
     )
@@ -60,7 +60,7 @@ def reply_amounts_invalid_format_error(bulk_id: UUID, error_details: Optional[st
 
 def reply_unknown_account_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
-        bulk_id=bulk_id,
+        bulk_id=str(bulk_id),
         status_code=404,
         reason='unknown-account',  # todo ENUM
         error_details=error_details if error_details else "Your account should be active"
@@ -68,12 +68,40 @@ def reply_unknown_account_error(bulk_id: UUID, error_details: Optional[str] = No
 
 
 def reply_too_many_transfers_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
+    cause = f"Too many transfers requested (max={MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST})"
+    logger.error(f"bulk_id={bulk_id} could not process request: {cause}")  # todo add logging context
     return _bulk_error(
-        bulk_id=bulk_id,
+        bulk_id=str(bulk_id),
         status_code=413,
         reason='too-many-transfers',  # todo ENUM
-        error_details=error_details if error_details else f"Too many transfers requested (max={MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST})"
+        error_details=error_details if error_details else cause
     )
+
+
+def reply_invalid_request_id_error(bulk_id: str, error_details: Optional[str] = None) -> JSONResponse:
+    logger.error(f"Invalid bulk request uuid: {bulk_id}")
+    return _bulk_error(
+        bulk_id=bulk_id,
+        reason='invalid-request-id',  # todo ENUM
+        error_details=error_details if error_details else f"Invalid bulk request uuid"
+    )
+
+
+def reply_request_already_processed_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
+    logger.error(f"bulk_id={bulk_id} Bulk request already processed")
+    return _bulk_error(
+        bulk_id=str(bulk_id),
+        reason='already-processed',  # todo ENUM
+        error_details=error_details if error_details else f"Request {bulk_id} already processed."
+    )
+
+
+def _validate_request_id(request_id) -> bool:
+    try:
+        bulk_id = uuid.UUID(request_id)
+        return str(bulk_id) == request_id.lower()
+    except ValueError:
+        return False
 
 
 @router.post(
@@ -92,62 +120,64 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
     /docs
     todo docstring
     """
-    # todo
-    bulk_id = uuid.uuid4()  # todo handle idempotency
-    # checks: first additional validation (such as amounts are positive and can be converted to int), amounts are enough, etc.
+    if not _validate_request_id(request_id=request.request_id):
+        return reply_invalid_request_id_error(bulk_id=request.request_id)
 
-    if len(request.credit_transfers) > MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST:
-        logger.error(f"bulk_id={bulk_id} could not process request as too many transfers requested "
-                     f"({len(request.credit_transfers)} > limit={MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST})")  # todo add logging context
-        return reply_too_many_transfers_error(bulk_id=bulk_id)
-
-    amounts_in_cents = []
-    try:
-        amounts_in_cents = [to_cents(amount_in_euros_str=credit_transfer.amount) for credit_transfer in
-                            request.credit_transfers]
-    except ValueError as e:
-        logger.error(f"bulk_id={bulk_id} could not process request: {e}")  # todo add logging context
-        return reply_amounts_invalid_format_error(bulk_id=bulk_id, error_details=str(e))
-
-    all_transfer_amounts_are_valid = all(amount > 0 for amount in amounts_in_cents)
-    if not all_transfer_amounts_are_valid:
-        logger.error(f"bulk_id={bulk_id} could not process request as not all amounts are > 0: {amounts_in_cents}")  # todo add logging context
-        return reply_amounts_should_be_positive_error(bulk_id=bulk_id)
-        # raise HTTPException(status_code=422, detail="Bulk transfer denied")
-
-    # with session.begin():
-    # statement = select(db.BankAccount).where(
-    #     db.BankAccount.bic == request.organization_bic.strip(),
-    #     db.BankAccount.iban == request.organization_iban.strip()
-    # )
-    # statement = cast(Select, statement)
-    # account = session.exec(statement).first()# v1: sync transfers
+    # bulk_id = uuid.uuid4()
+    bulk_id = uuid.UUID(request.request_id)
     with session.begin():
+        already_processed_bulk_request = db.find_bulk_request(session=session, bulk_request_uuid=bulk_id)
+        if already_processed_bulk_request:
+            return reply_request_already_processed_error(bulk_id=bulk_id)
+
+        if len(request.credit_transfers) > MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST:
+            return reply_too_many_transfers_error(bulk_id=bulk_id)
+
+        amounts_in_cents = []
+        try:
+            amounts_in_cents = [to_cents(amount_in_euros_str=credit_transfer.amount) for credit_transfer in
+                                request.credit_transfers]
+        except ValueError as e:
+            logger.error(f"bulk_id={bulk_id} could not process request: {e}")  # todo add logging context
+            return reply_amounts_invalid_format_error(bulk_id=bulk_id, error_details=str(e))
+
+        all_transfer_amounts_are_valid = all(amount > 0 for amount in amounts_in_cents)
+        if not all_transfer_amounts_are_valid:
+            logger.error(f"bulk_id={bulk_id} could not process request as not all amounts are > 0: {amounts_in_cents}")  # todo add logging context
+            return reply_amounts_should_be_positive_error(bulk_id=bulk_id)
+
+        # with session.begin():
         account = db.find_account_for_update(session=session, bic=request.organization_bic, iban=request.organization_iban)
         if not account:
             logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
             return reply_unknown_account_error(bulk_id=bulk_id)
 
-        total_transfer_amounts = sum(amounts_in_cents)
-        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts={total_transfer_amounts} | account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
-        if total_transfer_amounts + account.ongoing_transfer_cents > account.balance_cents:
+        total_transfer_amounts_cents = sum(amounts_in_cents)
+        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} | account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+        if total_transfer_amounts_cents + account.ongoing_transfer_cents > account.balance_cents:
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
             return reply_not_enough_funds_error(bulk_id=bulk_id)
 
 
         # todo check UUIDs and skip
-        # todo log bulk_request
+
+        bulk_request = db.create_bulk_request(
+            session=session,
+            bulk_request_uuid=bulk_id,
+            bank_account_id=account.id,
+            total_amounts_cents=total_transfer_amounts_cents
+        )
 
         # Reserve funds
-        # account.ongoing_transfer_cents += total_transfer_amounts
+        # account.ongoing_transfer_cents += total_transfer_amounts_cents
         # session.add(account)
-        db.reserve_funds(session=session, account=account, total_transfer_amounts=total_transfer_amounts)
+        db.reserve_funds(session=session, account=account, total_transfer_amounts=total_transfer_amounts_cents)
         for credit_transfer in request.credit_transfers:
             transaction = db.create_transfer_transaction(
-                session=session, bank_account_id=account.id, credit_transfer=credit_transfer
+                session=session, bank_account_id=account.id, credit_transfer=credit_transfer, bulk_request_id=bulk_id
             )
             logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-        db.finalize_bulk_transfer(session=session, account=account, total_transfer_amounts=total_transfer_amounts)
+        db.finalize_bulk_transfer(session=session, account=account, total_transfer_amounts=total_transfer_amounts_cents)
 
 
     # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}

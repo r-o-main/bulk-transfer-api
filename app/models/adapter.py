@@ -24,7 +24,7 @@ class CreditTransfer(BaseModel):
 
 
 class BulkTransferRequest(BaseModel):
-    # bulk_id: UUID  # todo Milestone 3
+    request_id: str
     organization_bic: str = Field(..., min_length=1)  # todo check BIC length
     organization_iban: str = Field(..., min_length=1)  # todo check IBAN length
     credit_transfers: List[CreditTransfer]

@@ -1,6 +1,5 @@
 # https://fastapi.tiangolo.com/tutorial/sql-databases/
 import datetime
-import uuid
 from enum import Enum
 from typing import Optional, cast
 from uuid import UUID, uuid4
@@ -32,6 +31,7 @@ class Transaction(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     transfer_uuid: UUID = Field(default_factory=uuid4, index=True, unique=True)
+    bulk_request_uuid: UUID
     counterparty_name: str = Field(nullable=False)
     counterparty_iban: str = Field(nullable=False)
     counterparty_bic: str = Field(nullable=False)
@@ -53,6 +53,8 @@ class RequestStatus(str, Enum):
 
 
 class BulkRequest(SQLModel, table=True):
+    __tablename__ = "bulk_requests"
+
     id: Optional[int] = Field(default=None, primary_key=True)
     request_uuid: UUID = Field(default_factory=uuid4, index=True, unique=True)
     bank_account_id: int = Field(nullable=False)
@@ -88,10 +90,13 @@ def finalize_bulk_transfer(session: Session, account: BankAccount, total_transfe
     session.add(account)
 
 
-def create_transfer_transaction(session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer) -> Transaction:
+def create_transfer_transaction(
+        session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer, bulk_request_id: Optional[UUID] = None
+) -> Transaction:
     transfer_transaction = Transaction(
         # transfer_uuid=credit_transfer.transfer_id if credit_transfer.transfer_id else uuid.uuid4(),
-        transfer_uuid=uuid.uuid4(),
+        transfer_uuid=uuid4(),
+        bulk_request_uuid=bulk_request_id if bulk_request_id else None,
         counterparty_name=credit_transfer.counterparty_name,
         counterparty_iban=credit_transfer.counterparty_iban,
         counterparty_bic=credit_transfer.counterparty_bic,
@@ -103,3 +108,23 @@ def create_transfer_transaction(session: Session, bank_account_id: int, credit_t
     session.add(transfer_transaction)
     # session.refresh(transfer_transaction)
     return transfer_transaction
+
+
+def find_bulk_request(session: Session, bulk_request_uuid: UUID) -> Optional[BulkRequest]:
+    statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid)
+    statement = cast(Select, statement)
+    return session.exec(statement).first()
+
+
+def create_bulk_request(
+        session: Session, bank_account_id: int, bulk_request_uuid: UUID, total_amounts_cents: int
+) -> BulkRequest:
+    bulk_request = BulkRequest(
+        request_uuid=bulk_request_uuid,
+        bank_account_id=bank_account_id,
+        total_amount_cents=total_amounts_cents,
+        status=RequestStatus.PENDING,
+        created_at=datetime.datetime.now(datetime.UTC)
+    )
+    session.add(bulk_request)
+    return bulk_request
