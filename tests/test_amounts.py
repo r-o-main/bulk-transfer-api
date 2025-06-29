@@ -14,6 +14,7 @@ def test_to_cents__when_valid_amount_with_at_most_2_decimal_places__should_conve
 ):
     assert to_cents(amount_in_euros_str=amount_euros) == expected_amount_cents
 
+
 @pytest.mark.parametrize("assert_message, amount_euros", [
     ("when invalid format", "eaaa"),
     ("when more than 2 decimal places", "10.123"),

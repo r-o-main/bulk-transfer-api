@@ -66,6 +66,7 @@ def consume_transfer_job(session: Session = Depends(db.get_session)):
         "type": "process-transfer"
     }
 
+
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
 def enqueue_finalize_bulk_job(bulk_job: BulkJob):
     FINALIZE_BULK_JOB_QUEUE.append(bulk_job)

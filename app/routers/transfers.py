@@ -1,10 +1,7 @@
-import uuid
-
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse
 from typing import Optional
 from uuid import UUID
-
 from sqlmodel import Session
 
 from app.amounts.converters import to_cents
@@ -40,7 +37,7 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
     if not _validate_request_id(request_id=request.request_id):
         return reply_invalid_request_id_error(bulk_id=request.request_id)
 
-    bulk_id = uuid.UUID(request.request_id)
+    bulk_id = UUID(request.request_id)
     with session.begin():
         already_processed_bulk_request = db.find_bulk_request(session=session, bulk_request_uuid=bulk_id)
         if already_processed_bulk_request:
@@ -62,7 +59,9 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             logger.error(f"bulk_id={bulk_id} could not process request as not all amounts are > 0: {amounts_in_cents}")
             return reply_amounts_should_be_positive_error(bulk_id=bulk_id)
 
-        account = db.select_account_for_update(session=session, bic=request.organization_bic, iban=request.organization_iban)
+        account = db.select_account_for_update(
+            session=session, bic=request.organization_bic, iban=request.organization_iban
+        )
         if not account:
             logger.error(f"bulk_id={bulk_id} could not process request as account unknown")
             return reply_unknown_account_error(bulk_id=bulk_id)
@@ -71,7 +70,8 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
         logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
                      f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
         if total_transfer_amounts_cents + account.ongoing_transfer_cents > account.balance_cents:
-            logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")
+            logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient "
+                         f"for ongoing operations")
             return reply_not_enough_funds_error(bulk_id=bulk_id)
 
         bulk_request_service.schedule_transfers(
@@ -87,7 +87,7 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
 
 def _validate_request_id(request_id) -> bool:
     try:
-        bulk_id = uuid.UUID(request_id)
+        bulk_id = UUID(request_id)
         return str(bulk_id) == request_id.lower()
     except ValueError:
         return False
@@ -103,12 +103,14 @@ def _bulk_error(bulk_id: str, reason: str, error_details: str, status_code: Opti
         ).model_dump()
     )
 
+
 def reply_not_enough_funds_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
         bulk_id=str(bulk_id),
         reason='insufficient-account-balance',
         error_details=error_details if error_details else "Not enough funds"
     )
+
 
 def reply_amounts_should_be_positive_error(bulk_id: UUID, error_details: Optional[str] = None) -> JSONResponse:
     return _bulk_error(
@@ -151,7 +153,7 @@ def reply_invalid_request_id_error(bulk_id: str, error_details: Optional[str] = 
     return _bulk_error(
         bulk_id=bulk_id,
         reason='invalid-request-id',
-        error_details=error_details if error_details else f"Invalid bulk request uuid"
+        error_details=error_details if error_details else "Invalid bulk request uuid"
     )
 
 

@@ -34,7 +34,7 @@ class BulkTransferRequest(BaseModel):
 class BulkTransferSuccessResponse(BaseModel):
     bulk_id: str  #  UUID
     message: str
-    # todo add status endpoint for this bulk request in the response:
+    # todo add status endpoint for this bulk request:
     # status_url: str
 
 

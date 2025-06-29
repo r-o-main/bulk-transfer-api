@@ -38,8 +38,8 @@ def schedule_transfers(
                 credit_transfer=credit_transfer
             )
         )
-        logger.warning(f"queued transfer job: {response}")
-    logger.warning(f"queued all transfer jobs")
+        logger.debug(f"Queued transfer job: {response}")
+    logger.debug("Queued all transfer jobs")
 
     return bulk_request
 
@@ -76,7 +76,7 @@ def finalize_bulk_transfer(
     bulk_request.status = db.RequestStatus.COMPLETED
     bulk_request.completed_at = datetime.datetime.now(datetime.UTC)
 
-    logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
+    logger.info(f"bulk_id={bulk_request_uuid} bulk_request={bulk_request} completed")
 
     session.add_all([bulk_request, account])
     # todo next: queue a send webhook job

@@ -31,4 +31,4 @@ class FakeBrokerClient:
         return self._get_json("/transfer", TransferJob)
 
     def consume_bulk_job(self) -> Optional[BulkJob]:
-        return  self._get_json("/bulk", BulkJob)
+        return self._get_json("/bulk", BulkJob)
