@@ -7,11 +7,14 @@ from app.models import db
 from app.services import transfer_service, bulk_request_service
 
 from app.models.job import TransferJob, BulkJob
-
 from app.utils.log_formatter import get_logger
+
+
 logger = get_logger(__name__)
 
+
 router = APIRouter()
+
 
 # Fake "topics": all jobs of same type are in the same list (FIFO).
 # With a real message broker, the different bulk requests could be processed

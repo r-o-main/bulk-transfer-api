@@ -9,10 +9,12 @@ from app.models import adapter
 from app.models import db
 from app.models.db import get_session
 from app.services import bulk_request_service
+from app.utils.log_formatter import get_logger
+
 
 MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST = 1000
 
-from app.utils.log_formatter import get_logger
+
 logger = get_logger(__name__)
 
 
@@ -68,7 +70,7 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
 
         total_transfer_amounts_cents = sum(amounts_in_cents)
         logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
-                     f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+                    f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
         if total_transfer_amounts_cents + account.ongoing_transfer_cents > account.balance_cents:
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient "
                          f"for ongoing operations")

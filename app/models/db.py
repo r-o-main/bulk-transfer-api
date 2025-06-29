@@ -6,8 +6,9 @@ from sqlalchemy import Select
 from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
 from app.models.job import TransferJob
-
 from app.utils.log_formatter import get_logger
+
+
 logger = get_logger(__name__)
 
 
