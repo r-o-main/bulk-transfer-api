@@ -1,13 +1,12 @@
-import logging
 from uuid import UUID
 
 from fastapi import APIRouter, status, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
-from app.models.db import get_session
+from app.models import db
+from app.services import transfer_service, bulk_request_service
 
-from pydantic import BaseModel
-
-
+from app.services.fake_broker_client import TransferJob, BulkJob
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger(__name__)
 # from app.utils.log_formatter import logger
@@ -23,24 +22,6 @@ TRANSFER_JOB_QUEUE = []
 FINALIZE_BULK_JOB_QUEUE = []
 
 
-class TransferJob(BaseModel):
-    transfer_uuid: UUID
-    bulk_request_uuid: UUID
-    bank_account_id: int
-    counterparty_name: str
-    counterparty_iban: str
-    counterparty_bic: str
-    amount_cents: int
-    amount_currency: str
-    description: str
-
-
-class BulkJob(BaseModel):
-    bulk_request_uuid: UUID
-    bank_account_id: int
-    total_transfer_amounts: int
-
-
 @router.post("/transfer", status_code=status.HTTP_201_CREATED)
 async def enqueue_transfer_job(transfer_job: TransferJob):
     TRANSFER_JOB_QUEUE.append(transfer_job)
@@ -48,20 +29,42 @@ async def enqueue_transfer_job(transfer_job: TransferJob):
                 f"[queue:{len(TRANSFER_JOB_QUEUE)} jobs]")
     return {
         "status": "enqueued",
-        "transfer_id": transfer_job.transfer_uuid,
+        "transfer_uuid": transfer_job.transfer_uuid,
         "bulk_request_uuid": transfer_job.bulk_request_uuid,
         "type": "process-transfer"
     }
 
-@router.get("/transfer", response_model=TransferJob, status_code=status.HTTP_200_OK)
-async def consume_transfer_job(session: Session = Depends(get_session)):
+# @router.get("/transfer", response_model=TransferJob, status_code=status.HTTP_200_OK)
+@router.get("/transfer", status_code=status.HTTP_200_OK)
+async def consume_transfer_job(session: Session = Depends(db.get_session)):
     try:
         transfer_job = TRANSFER_JOB_QUEUE.pop()
         logger.info(f"Consuming transfer job {transfer_job.transfer_uuid}: {transfer_job} "
                     f"[queue: pending {len(TRANSFER_JOB_QUEUE)} jobs to be processed]")
     except IndexError:
         raise HTTPException(status_code=404, detail="No transfer job in queue")
-    return transfer_job
+
+    transaction = await transfer_service.process(session=session, transfer_job=transfer_job)
+    if not transaction:
+        logger.warning(f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted.")
+        return JSONResponse(
+            status_code=422, content={
+                "status": "failed",
+                "transfer_uuid": transfer_job.transfer_uuid,
+                "bulk_request_uuid": transfer_job.bulk_request_uuid,
+                "type": "process-transfer",
+                "details": f"Processing of transfer job {transfer_job.transfer_uuid} failed or was aborted"
+            }
+        )
+
+    return {
+        "status": "processed",
+        "transfer_id": str(transaction.transfer_uuid),
+        "amount_cents": transaction.amount_cents,
+        "bulk_request_uuid": transfer_job.bulk_request_uuid,
+        "type": "process-transfer"
+    }
+    # return transfer_job
 
 
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
@@ -75,12 +78,71 @@ async def enqueue_finalize_bulk_job(bulk_job: BulkJob):
         "type": "finalize-bulk"
     }
 
-@router.get("/bulk", response_model=BulkJob, status_code=status.HTTP_200_OK)
-async def consume_finalize_bulk_job(session: Session = Depends(get_session)):
+# @router.get("/bulk", response_model=BulkJob, status_code=status.HTTP_200_OK)
+@router.get("/bulk", status_code=status.HTTP_200_OK)
+async def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
     try:
         bulk_job = FINALIZE_BULK_JOB_QUEUE.pop()
         logger.info(f"Consuming bulk job {bulk_job.bulk_request_uuid}: {bulk_job} "
                     f"[queue: pending {len(FINALIZE_BULK_JOB_QUEUE)} jobs to be processed]")
     except IndexError:
         raise HTTPException(status_code=404, detail="No bulk job in queue")
-    return bulk_job
+    # return bulk_job
+    with session.begin():
+        account: db.BankAccount | None = session.get(db.BankAccount, bulk_job.bank_account_id)
+        if not account:
+            logger.warning(f"bulk_id={bulk_job.bulk_request_uuid} could not finalize: account not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Account not found for bulk request {bulk_job.bulk_request_uuid}"
+            )
+
+        bulk_request = db.select_bulk_request_for_update(
+            session=session, bulk_request_uuid=UUID(bulk_job.bulk_request_uuid)
+        )
+        if not bulk_request:
+            logger.warning(f"bulk_id={bulk_job.bulk_request_uuid} not found in database")
+            raise HTTPException(status_code=404, detail=f"Bulk request {bulk_job.bulk_request_uuid} not found")
+
+        if bulk_job.success:
+            final_bulk_request = bulk_request_service.finalize_bulk_transfer(
+                session=session,
+                bulk_request=bulk_request,
+                # bulk_request_uuid=UUID(bulk_job.bulk_request_uuid),
+                account=account,
+                single_transferred_amount_cents=bulk_job.single_transferred_amount_cents
+                # total_transfer_amounts_cents=account.ongoing_transfer_cents,
+                # # or better: pass real `total_transfer_amounts_cents`
+                # transferred_amount_cents=0  # This needs adjustment depending on real logic
+            )
+        else:
+            final_bulk_request = bulk_request_service.cancel_bulk_transfer(
+                session=session,
+                # bulk_request_uuid=UUID(bulk_job.bulk_request_uuid),
+                bulk_request=bulk_request,
+                account=account,
+                # total_transfer_amounts=account.ongoing_transfer_cents,  # idem
+            )
+
+        # session.commit()
+        if final_bulk_request is None:
+            logger.warning(f"Processing of bulk job {bulk_job.bulk_request_uuid} failed or was aborted.")
+            return JSONResponse(
+                status_code=422, content={
+                    "type": "finalize-bulk",
+                    "status": "failed",
+                    "bulk_request_uuid": bulk_job.bulk_request_uuid,
+                    "total_transferred_amounts_cents": bulk_request.total_amount_cents,
+                    "processed_amounts_cents": bulk_request.processed_amount_cents,
+                    "details": f"Processing of bulk job failed or was aborted"
+                }
+            )
+
+        return {
+            "type": "finalize-bulk",
+            "status": final_bulk_request.status,
+            "bulk_request_uuid": bulk_job.bulk_request_uuid,
+            "total_transferred_amounts_cents": bulk_request.total_amount_cents,
+            "processed_amounts_cents": bulk_request.processed_amount_cents,
+            "completed_at": final_bulk_request.completed_at.isoformat() if final_bulk_request.completed_at else None
+        }

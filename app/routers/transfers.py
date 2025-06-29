@@ -1,5 +1,4 @@
 import uuid
-import logging
 
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse
@@ -12,6 +11,7 @@ from app.amounts.converters import to_cents
 from app.models import adapter
 from app.models import db
 from app.models.db import get_session
+from app.services import bulk_request_service
 
 MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST = 1000
 
@@ -115,7 +115,7 @@ def _validate_request_id(request_id) -> bool:
         422: {"model": adapter.BulkTransferErrorResponse, "description": "Bulk transfer denied"},  # todo list of reasons (provide details in response) + handle mismatch patload vs Pydantic model
     }
 )
-def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):  # todo check async
+async def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session = Depends(get_session)):  # todo check async
     """
     /docs
     todo docstring
@@ -147,7 +147,7 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             return reply_amounts_should_be_positive_error(bulk_id=bulk_id)
 
         # with session.begin():
-        account = db.find_account_for_update(session=session, bic=request.organization_bic, iban=request.organization_iban)
+        account = db.select_account_for_update(session=session, bic=request.organization_bic, iban=request.organization_iban)
         if not account:
             logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
             return reply_unknown_account_error(bulk_id=bulk_id)
@@ -159,57 +159,39 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
             return reply_not_enough_funds_error(bulk_id=bulk_id)
 
-        bulk_request = db.create_bulk_request(
+        # bulk_request = bulk_request_service.schedule_transfers(
+        await bulk_request_service.schedule_transfers(
             session=session,
-            bulk_request_uuid=bulk_id,
-            bank_account_id=account.id,
-            total_amounts_cents=total_transfer_amounts_cents
+            bulk_request_uuid=str(bulk_id),
+            account=account,
+            total_transfer_amounts_cents=total_transfer_amounts_cents,
+            credit_transfers=request.credit_transfers
         )
-        session.flush()
-
-        # Reserve funds
-        # account.ongoing_transfer_cents += total_transfer_amounts_cents
-        # session.add(account)
-        db.reserve_funds(session=session, account=account, total_transfer_amounts=total_transfer_amounts_cents)
 
     # simulate async
-    with session.begin():
-        account = db.find_account_for_update(session=session, bic=request.organization_bic,
-                                             iban=request.organization_iban)  # todo by id
-        if not account:
-            logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
-            return reply_unknown_account_error(bulk_id=bulk_id)
+    # with session.begin():
+    #     account = db.select_account_for_update(session=session, bic=request.organization_bic,
+    #                                            iban=request.organization_iban)  # todo by id
+    #     if not account:
+    #         logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
+    #         return reply_unknown_account_error(bulk_id=bulk_id)
+    #
+    #     logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
+    #                  f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+    #
+    #     for credit_transfer in request.credit_transfers:
+    #         transaction = db.create_transfer_transaction(
+    #             session=session, bank_account_id=account.id, credit_transfer=credit_transfer, bulk_request_id=bulk_id
+    #         )
+    #         # logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
+    #         logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
+    #
+    #         bulk_request_service.finalize_bulk_transfer(
+    #             session=session,
+    #             bulk_request_uuid=bulk_request.request_uuid,
+    #             account=account,
+    #             total_transfer_amounts_cents=total_transfer_amounts_cents,
+    #             transferred_amount_cents=credit_transfer.amount_to_cents()
+    #         )
 
-        logger.info(f"bulk_id={bulk_id} total_transfer_amounts_cents={total_transfer_amounts_cents} "
-                     f"| account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
-
-        for credit_transfer in request.credit_transfers:
-            transaction = db.create_transfer_transaction(
-                session=session, bank_account_id=account.id, credit_transfer=credit_transfer, bulk_request_id=bulk_id
-            )
-            # logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-            logger.info(f"bulk_id={bulk_id} transfer_uuid={transaction.transfer_uuid} transaction recorded amount={transaction.amount_cents}")
-
-            db.finalize_bulk_transfer(
-                session=session,
-                bulk_request_uuid=bulk_request.request_uuid,
-                account=account,
-                total_transfer_amounts_cents=total_transfer_amounts_cents,
-                transferred_amount_cents=credit_transfer.amount_to_cents()
-            )
-
-        # db.finalize_bulk_transfer(
-        #     session=session,
-        #     bulk_request_uuid=bulk_request.request_uuid,
-        #     account=account,
-        #     total_transfer_amounts_cents=total_transfer_amounts_cents,
-        #     transferred_amount_cents=0  # todo add transaction amount
-        # )
-
-
-    # return {"message": "Bulk transfer accepted", "bulk_id": str(request.bulk_id)}
     return {"message": "Bulk transfer accepted", "bulk_id": str(bulk_id)}
-    # return JSONResponse(
-    #     status_code=201,
-    #     content=BulkTransferSuccessResponse(bulk_id=str(bulk_id), message="Bulk transfer accepted").model_dump()
-    # )

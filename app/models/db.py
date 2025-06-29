@@ -1,6 +1,5 @@
 # https://fastapi.tiangolo.com/tutorial/sql-databases/
 import datetime
-import logging
 from enum import Enum
 from typing import Optional, cast
 from uuid import UUID, uuid4
@@ -9,6 +8,7 @@ from sqlalchemy import Select
 from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
 from app.models import adapter
+from app.services.fake_broker_client import TransferJob
 
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger(__name__)
@@ -82,8 +82,9 @@ class BulkRequest(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True)
     )
 
+#--- Bank Account
 
-def find_account_for_update(session: Session, bic: str, iban: str) -> Optional[BankAccount]:
+def select_account_for_update(session: Session, bic: str, iban: str) -> Optional[BankAccount]:
     statement = select(BankAccount).where(
         BankAccount.bic == bic.strip(),
         BankAccount.iban == iban.strip()
@@ -97,92 +98,31 @@ def reserve_funds(session: Session, account: BankAccount, total_transfer_amounts
     session.add(account)
 
 
-def finalize_bulk_transfer(
-        session: Session,
-        bulk_request_uuid: UUID,
-        account: BankAccount,
-        total_transfer_amounts_cents: int,
-        transferred_amount_cents: int,
-):
-    statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid).with_for_update()
-    # statement = select(BulkRequest).where(BulkRequest.id == bulk_request_id).with_for_update()
-    statement = cast(Select, statement)
-    bulk_request = session.exec(statement).first()
-    logger.info(f"bulk_id={bulk_request_uuid} FINALIZE account_id={account.id} total_transfer_amounts={total_transfer_amounts_cents}")
-
-    if not bulk_request:
-        logger.warning(f"bulk_id={bulk_request_uuid} not found in databse")
-        return
-
-    if bulk_request.status in [RequestStatus.FAILED, RequestStatus.COMPLETED]:
-        logger.warning(f"bulk_id={bulk_request_uuid} already finalized status={bulk_request.status}")
-        return
-
-    bulk_request.processed_amount_cents += transferred_amount_cents
-    if bulk_request.processed_amount_cents < total_transfer_amounts_cents:
-        session.add(bulk_request)
-        logger.info(f"bulk_id={bulk_request_uuid} status={bulk_request.status} not yet fully processed "
-                       f"(processed_amount_cents={bulk_request.processed_amount_cents}|"
-                       f"total_transfer_amounts_cents={total_transfer_amounts_cents})")
-        return
-
-    account.ongoing_transfer_cents -= total_transfer_amounts_cents
-    account.balance_cents -= total_transfer_amounts_cents
-    # session.add(account)
-    # todo add safety guards on balance_cents > 0 and ongoing_transfer_cents > 0
-
-    bulk_request.status = RequestStatus.COMPLETED
-    bulk_request.completed_at = datetime.datetime.now(datetime.UTC)
-
-    # todo update counters
-    logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
-
-    session.add_all([bulk_request, account])
-
-
-def cancel_bulk_transfer(session: Session, bulk_request_uuid: UUID, account: BankAccount, total_transfer_amounts: int):
-    statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid).with_for_update()
-    statement = cast(Select, statement)
-    bulk_request = session.exec(statement).first()
-    logger.info(f"bulk_id={bulk_request_uuid} CANCEL account_id={account.id} total_transfer_amounts={total_transfer_amounts}")
-
-    if not bulk_request:
-        logger.warning(f"bulk_id={bulk_request_uuid} not found in database")
-        return
-    if bulk_request.status == RequestStatus.FAILED:
-        logger.info(f"bulk_id={bulk_request_uuid} already cancelled status={bulk_request.status}")
-        return
-
-    account.ongoing_transfer_cents -= total_transfer_amounts
-    # todo add safety guards on ongoing_transfer_cents > 0
-
-    bulk_request.status = RequestStatus.FAILED
-    bulk_request.completed_at = datetime.datetime.now(datetime.UTC)
-    # todo update counters
-    logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
-
-    session.add_all([bulk_request, account])
-
+#--- Transactions
 
 def create_transfer_transaction(
-        session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer, bulk_request_id: Optional[UUID] = None
+        # session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer, bulk_request_id: Optional[UUID] = None
+        session: Session, transfer_job_data: TransferJob
 ) -> Transaction:
     transfer_transaction = Transaction(
         # transfer_uuid=credit_transfer.transfer_id if credit_transfer.transfer_id else uuid.uuid4(),
-        transfer_uuid=uuid4(),  # todo use the one from the job
-        bulk_request_uuid=bulk_request_id if bulk_request_id else None,
-        counterparty_name=credit_transfer.counterparty_name,
-        counterparty_iban=credit_transfer.counterparty_iban,
-        counterparty_bic=credit_transfer.counterparty_bic,
-        amount_cents=-credit_transfer.amount_to_cents(),
-        amount_currency=credit_transfer.currency,
-        bank_account_id=bank_account_id,
-        description=credit_transfer.description
+        transfer_uuid=UUID(transfer_job_data.transfer_uuid),
+        # bulk_request_uuid=bulk_request_id if bulk_request_id else None,
+        bulk_request_uuid=UUID(transfer_job_data.bulk_request_uuid),
+        counterparty_name=transfer_job_data.counterparty_name,
+        counterparty_iban=transfer_job_data.counterparty_iban,
+        counterparty_bic=transfer_job_data.counterparty_bic,
+        amount_cents=-transfer_job_data.amount_cents,
+        amount_currency=transfer_job_data.amount_currency,
+        bank_account_id=transfer_job_data.bank_account_id,
+        description=transfer_job_data.description
     )
     session.add(transfer_transaction)
     # session.refresh(transfer_transaction)
     return transfer_transaction
 
+
+#--- Bulk Requests
 
 def find_bulk_request(session: Session, bulk_request_uuid: UUID) -> Optional[BulkRequest]:
     statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid)
@@ -202,4 +142,11 @@ def create_bulk_request(
         created_at=datetime.datetime.now(datetime.UTC)
     )
     session.add(bulk_request)
+    return bulk_request
+
+
+def select_bulk_request_for_update(session: Session, bulk_request_uuid: UUID):
+    statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid).with_for_update()
+    statement = cast(Select, statement)
+    bulk_request = session.exec(statement).first()
     return bulk_request

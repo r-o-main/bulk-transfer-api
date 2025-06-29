@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from mockito import when, KWARGS, mock, ANY
 
+from app.services import bulk_request_service
 from app.main import app
 from app.models import db
 from app.routers.transfers import MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST
@@ -26,7 +27,7 @@ client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, 
 
 @pytest.fixture
 def when_account_valid(request):
-    when(db).find_account_for_update(**KWARGS).thenReturn(
+    when(db).select_account_for_update(**KWARGS).thenReturn(
         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
                        balance_cents=90000000, ongoing_transfer_cents=0)
     )
@@ -44,14 +45,14 @@ def unstub_between_tests():
 
 @pytest.fixture
 def when_ongoing_transfer_cents(request):
-    when(db).find_account_for_update(**KWARGS).thenReturn(
+    when(db).select_account_for_update(**KWARGS).thenReturn(
         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
                        balance_cents=599900, ongoing_transfer_cents=399900)
     )
 
 @pytest.fixture
 def when_unknown_bank_account(request):
-    when(db).find_account_for_update(**KWARGS).thenReturn(None)
+    when(db).select_account_for_update(**KWARGS).thenReturn(None)
 
 
 @pytest.fixture
@@ -65,17 +66,7 @@ def when_process_request_successfully(request):
         "status": db.RequestStatus.PENDING
     })
     )
-    when(db).finalize_bulk_transfer(**KWARGS)
-
-
-# @pytest.fixture(scope="module", autouse=True)
-# def fake_session():
-#     return mock()
-
-
-# @pytest.fixture
-# def fake_credit_transfers():
-#     return [stub_credit_transfer()]
+    when(bulk_request_service).finalize_bulk_transfer(**KWARGS)
 
 
 @pytest.mark.parametrize("sample_file", ["sample_valid_payload_1.json", "sample_valid_payload_2.json"])
