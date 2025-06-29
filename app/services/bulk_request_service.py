@@ -87,6 +87,7 @@ def finalize_bulk_transfer(
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
 
     session.add_all([bulk_request, account])
+    # todo: queue a send webhook job
     return bulk_request
 
 
@@ -117,4 +118,5 @@ def cancel_bulk_transfer(
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
 
     session.add_all([bulk_request, account])
+    # todo: queue a send webhook job
     return bulk_request

@@ -21,7 +21,9 @@ router = APIRouter()
 # in parallel, using the bulk_request_uuid as routing scope for instance.
 TRANSFER_JOB_QUEUE = deque()
 FINALIZE_BULK_JOB_QUEUE = deque()
+# todo
 RECONCILIATION_JOB_QUEUE = deque()
+SEND_WEBHOOK_JOB_QUEUE = deque()
 
 
 @router.post("/transfer", status_code=status.HTTP_201_CREATED)
