@@ -7,7 +7,7 @@ from sqlmodel import Session
 from app.models import db
 from app.services import transfer_service, bulk_request_service
 
-from app.services.fake_broker_client import TransferJob, BulkJob
+from app.models.job import TransferJob, BulkJob
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger(__name__)
 # from app.utils.log_formatter import logger

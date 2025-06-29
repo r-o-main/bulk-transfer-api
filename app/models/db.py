@@ -8,7 +8,7 @@ from sqlalchemy import Select
 from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
 from app.models import adapter
-from app.services.fake_broker_client import TransferJob
+from app.models.job import TransferJob
 
 # logging.basicConfig(level=logging.DEBUG)
 # logger = logging.getLogger(__name__)

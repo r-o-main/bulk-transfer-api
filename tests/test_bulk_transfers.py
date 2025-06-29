@@ -4,7 +4,7 @@ import mockito
 import pytest
 
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
+# from httpx import AsyncClient
 from mockito import when, KWARGS, mock
 
 from app.services import bulk_request_service

@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 
 from app.models import db
 from app.models.adapter import CreditTransfer
-from app.services.fake_broker_client import FakeBrokerClient, build_transfer_job
+from app.services.fake_broker_client import FakeBrokerClient
+from app.models.job import build_transfer_job
 
 from app.utils.log_formatter import get_logger
 logger = get_logger(__name__)

@@ -5,7 +5,8 @@ from sqlmodel import Session
 
 from app.models import db
 # from app.services import bulk_request_service
-from app.services.fake_broker_client import TransferJob, FakeBrokerClient, BulkJob
+from app.services.fake_broker_client import FakeBrokerClient
+from app.models.job import TransferJob, BulkJob
 
 from app.utils.log_formatter import get_logger
 logger = get_logger(__name__)

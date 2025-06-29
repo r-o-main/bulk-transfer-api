@@ -9,4 +9,3 @@ httpx
 sqlmodel
 mockito
 colorlog
-pytest-asyncio
