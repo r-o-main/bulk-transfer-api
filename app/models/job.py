@@ -19,7 +19,7 @@ def build_transfer_job(
         bulk_request_uuid: str, transfer_uuid: str, bank_account_id: int, credit_transfer: CreditTransfer
 ) -> TransferJob:
     return TransferJob(
-        transfer_uuid=transfer_uuid,  # todo check
+        transfer_uuid=transfer_uuid,
         bulk_request_uuid=bulk_request_uuid,
         bank_account_id=bank_account_id,
         counterparty_name=credit_transfer.counterparty_name,

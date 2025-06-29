@@ -1,18 +1,12 @@
-# https://fastapi.tiangolo.com/tutorial/sql-databases/
 import datetime
 from enum import Enum
 from typing import Optional, cast
 from uuid import UUID, uuid4
-
 from sqlalchemy import Select
 from sqlmodel import create_engine, SQLModel, Field, Column, DateTime, select, Session
 
-from app.models import adapter
 from app.models.job import TransferJob
 
-# logging.basicConfig(level=logging.DEBUG)
-# logger = logging.getLogger(__name__)
-# from app.utils.log_formatter import logger
 from app.utils.log_formatter import get_logger
 logger = get_logger(__name__)
 
@@ -84,6 +78,7 @@ class BulkRequest(SQLModel, table=True):
 
 #--- Bank Account
 
+
 def select_account_for_update(session: Session, bic: str, iban: str) -> Optional[BankAccount]:
     statement = select(BankAccount).where(
         BankAccount.bic == bic.strip(),
@@ -100,6 +95,7 @@ def reserve_funds(session: Session, account: BankAccount, total_transfer_amounts
 
 #--- Transactions
 
+
 def find_transfer_transaction(session: Session, transfer_uuid: UUID) -> Optional[Transaction]:
     statement = select(Transaction).where(Transaction.transfer_uuid == transfer_uuid)
     statement = cast(Select, statement)
@@ -107,13 +103,10 @@ def find_transfer_transaction(session: Session, transfer_uuid: UUID) -> Optional
 
 
 def create_transfer_transaction(
-        # session: Session, bank_account_id: int, credit_transfer: adapter.CreditTransfer, bulk_request_id: Optional[UUID] = None
         session: Session, transfer_job_data: TransferJob
 ) -> Transaction:
     transfer_transaction = Transaction(
-        # transfer_uuid=credit_transfer.transfer_id if credit_transfer.transfer_id else uuid.uuid4(),
         transfer_uuid=UUID(transfer_job_data.transfer_uuid),
-        # bulk_request_uuid=bulk_request_id if bulk_request_id else None,
         bulk_request_uuid=UUID(transfer_job_data.bulk_request_uuid),
         counterparty_name=transfer_job_data.counterparty_name,
         counterparty_iban=transfer_job_data.counterparty_iban,
@@ -124,11 +117,11 @@ def create_transfer_transaction(
         description=transfer_job_data.description
     )
     session.add(transfer_transaction)
-    # session.refresh(transfer_transaction)
     return transfer_transaction
 
 
 #--- Bulk Requests
+
 
 def find_bulk_request(session: Session, bulk_request_uuid: UUID) -> Optional[BulkRequest]:
     statement = select(BulkRequest).where(BulkRequest.request_uuid == bulk_request_uuid)

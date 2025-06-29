@@ -4,7 +4,6 @@ import mockito
 import pytest
 
 from fastapi.testclient import TestClient
-# from httpx import AsyncClient
 from mockito import when, KWARGS, mock
 
 from app.services import bulk_request_service
@@ -18,20 +17,13 @@ from tests.faker import stub_credit_transfer, stub_bulk_transfer_payload, load_s
 client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, https://fastapi.tiangolo.com/tutorial/testing/
 
 
-# @pytest.fixture(scope="module", autouse=True)
-# def setup(request):
-#     when(db).find_account_for_update(**KWARGS).thenReturn(
-#         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
-#                        balance_cents=90000000, ongoing_transfer_cents=0)
-#     )
-#     when(db).find_bulk_request(**KWARGS)
-
 @pytest.fixture
 def when_account_valid(request):
     when(db).select_account_for_update(**KWARGS).thenReturn(
         db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
                        balance_cents=90000000, ongoing_transfer_cents=0)
     )
+
 
 @pytest.fixture
 def when_bulk_request_not_already_processed(request):
@@ -51,6 +43,7 @@ def when_ongoing_transfer_cents(request):
                        balance_cents=599900, ongoing_transfer_cents=399900)
     )
 
+
 @pytest.fixture
 def when_unknown_bank_account(request):
     when(db).select_account_for_update(**KWARGS).thenReturn(None)
@@ -58,7 +51,6 @@ def when_unknown_bank_account(request):
 
 @pytest.fixture
 def when_process_request_successfully(request):
-    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
     when(db).reserve_funds(**KWARGS)
     when(db).create_bulk_request(**KWARGS).thenReturn(mock({'request_uuid': uuid.uuid4()}))
     when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
@@ -70,8 +62,6 @@ def when_process_request_successfully(request):
     when(bulk_request_service).finalize_bulk_transfer(**KWARGS)
 
 
-# @pytest.mark.skip(reason="require async client")
-# @pytest.mark.asyncio
 @pytest.mark.parametrize("sample_file", ["sample_valid_payload_1.json", "sample_valid_payload_2.json"])
 def test_transfers_bulk__when_valid_payload__should_return_201(
         when_account_valid, when_bulk_request_not_already_processed, when_process_request_successfully,
@@ -79,16 +69,10 @@ def test_transfers_bulk__when_valid_payload__should_return_201(
 ):
     sample_payload = load_sample_payload(resource_name=sample_file)
     response = client.post(url="/transfers/bulk", json=sample_payload)
-    # from app.main import app
-    # async with AsyncClient(app=app, base_url="http://test") as client:
-    # # async with AsyncClient(base_url="http://test") as client:
-    #     response = await client.post("/transfers/bulk", json=sample_payload)
 
     assert response.status_code == 201
     response_dict = response.json()
     assert "bulk_id" in response_dict
-
-    # todo verify
 
 
 @pytest.mark.parametrize("assert_message, payload", [
@@ -125,36 +109,7 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
 
 
 @pytest.mark.parametrize("assert_message, payload", [
-    # ('when organization is not known', {
-    #     "organization_bic": "UNKNOWN_BIC",
-    #     "organization_iban": "VALID_IBAN",
-    #     "credit_transfers": [],
-    # }),
-    # ('when customer bank account is not known', {
-    #     "organization_bic": "VALID_BIC",
-    #     "organization_iban": "UNKNOWN_IBAN",
-    #     "credit_transfers": [],
-    # }),
-    # ('when customer bank and account are not known', {
-    #     "organization_bic": "UNKNOWN_BIC",
-    #     "organization_iban": "UNKNOWN_IBAN",
-    #     "credit_transfers": [],
-    # }),
-    # ('when organization BIC is not valid', {
-    #     "organization_bic": "INVALID_BIC",
-    #     "organization_iban": "VALID_IBAN",
-    #     "credit_transfers": [],
-    # }),
-    # ('when organization IBAN is not valid', {
-    #     "organization_bic": "VALID_BIC",
-    #     "organization_iban": "INVALID_IBAN",
-    #     "credit_transfers": [],
-    # }),
-    # ('when organization IBAN and BIC are not valid', {
-    #     "organization_bic": "INVALID_BIC",
-    #     "organization_iban": "INVALID_IBAN",
-    #     "credit_transfers": [],
-    # }),
+    # todo test scenarios invalid BIC and IBAN
     (
             'when at least one amount to transfer < 0',
             stub_bulk_transfer_payload(
@@ -280,16 +235,7 @@ def test_transfers_bulk__when_already_processed__should_return_422(
     bulk_request_id = str(uuid.uuid4())
     payload = stub_bulk_transfer_payload()
     payload["request_id"] = bulk_request_id
-    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
-    # when(db).reserve_funds(**KWARGS)
-    # when(db).create_bulk_request(**KWARGS)
-    # when(db).create_transfer_transaction(**KWARGS).thenReturn(mock({
-    #     "id": 1,
-    #     "transfer_uuid": uuid.uuid4(),
-    #     "status": db.RequestStatus.PENDING
-    # })
-    # )
-    # when(db).finalize_bulk_transfer(**KWARGS)
+
     response = client.post(url="/transfers/bulk", json=payload)
     assert response.status_code == 201
 
@@ -312,9 +258,6 @@ def test_transfers_bulk__when_too_many_transfers__should_return_413(
 def test_transfers_bulk__when_unknown_organization__should_return_404(
         when_unknown_bank_account, when_bulk_request_not_already_processed
 ):
-# def test_transfers_bulk__when_unknown_organization__should_return_404():
-    # when(db).find_account_for_update(**KWARGS).thenReturn(None)
-    # when(db).find_bulk_request(**KWARGS).thenReturn(None)
     response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload())
     print(f"response={response.json()}")
     assert response.status_code == 404

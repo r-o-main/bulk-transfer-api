@@ -1,9 +1,7 @@
 import datetime
-from typing import cast, List, Optional
+from typing import List, Optional
 from uuid import UUID, uuid4
-
-from sqlalchemy import Select
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.models import db
 from app.models.adapter import CreditTransfer
@@ -14,9 +12,12 @@ from app.utils.log_formatter import get_logger
 logger = get_logger(__name__)
 
 
-# async def schedule_transfers(
 def schedule_transfers(
-        session: Session, bulk_request_uuid: str, account: db.BankAccount, total_transfer_amounts_cents: int, credit_transfers: List[CreditTransfer]
+        session: Session,
+        bulk_request_uuid: str,
+        account: db.BankAccount,
+        total_transfer_amounts_cents: int,
+        credit_transfers: List[CreditTransfer]
 ) -> db.BulkRequest:
     bulk_request = db.create_bulk_request(
         session=session,
@@ -29,7 +30,6 @@ def schedule_transfers(
 
     fake_broker_client = FakeBrokerClient()
     for credit_transfer in credit_transfers:
-        # response = await fake_broker_client.queue_transfer_job(
         response = fake_broker_client.queue_transfer_job(
             job=build_transfer_job(
                 bulk_request_uuid=bulk_request_uuid,
@@ -44,20 +44,12 @@ def schedule_transfers(
     return bulk_request
 
 
-# def finalize_bulk_transfer(
-#         session: Session,
-#         bulk_request_uuid: UUID,
-#         account: db.BankAccount,
-#         total_transfer_amounts_cents: int,
-#         transferred_amount_cents: int,
-# ):
 def finalize_bulk_transfer(
         session: Session,
         bulk_request: db.BulkRequest,
         account: db.BankAccount,
         single_transferred_amount_cents: int
 ) -> Optional[db.BulkRequest]:
-    # bulk_request = db.select_bulk_request_for_update(session=session, bulk_request_uuid=bulk_request_uuid)
     bulk_request_uuid = bulk_request.request_uuid
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE account_id={account.id} "
                 f"single_transferred_amount_cents={single_transferred_amount_cents}")
@@ -80,24 +72,22 @@ def finalize_bulk_transfer(
 
     account.ongoing_transfer_cents -= bulk_request.total_amount_cents
     account.balance_cents -= bulk_request.total_amount_cents
-    # todo add safety guards on balance_cents > 0 and ongoing_transfer_cents > 0
+
     bulk_request.status = db.RequestStatus.COMPLETED
     bulk_request.completed_at = datetime.datetime.now(datetime.UTC)
 
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
 
     session.add_all([bulk_request, account])
-    # todo: queue a send webhook job
+    # todo next: queue a send webhook job
     return bulk_request
 
 
-# def cancel_bulk_transfer(session: Session, bulk_request_uuid: UUID, account: db.BankAccount, total_transfer_amounts: int):
 def cancel_bulk_transfer(
         session: Session,
         bulk_request: db.BulkRequest,
         account: db.BankAccount
 ) -> Optional[db.BulkRequest]:
-    # bulk_request = db.select_bulk_request_for_update(session=session, bulk_request_uuid=bulk_request_uuid)
     bulk_request_uuid = bulk_request.request_uuid
     logger.info(f"bulk_id={bulk_request_uuid} CANCEL account_id={account.id} "
                 f"total_transfer_amounts={bulk_request.total_amount_cents}")
@@ -111,12 +101,11 @@ def cancel_bulk_transfer(
         return bulk_request
 
     account.ongoing_transfer_cents -= bulk_request.total_amount_cents
-    # todo add safety guards on ongoing_transfer_cents > 0
 
     bulk_request.status = db.RequestStatus.FAILED
     bulk_request.completed_at = datetime.datetime.now(datetime.UTC)
     logger.info(f"bulk_id={bulk_request_uuid} FINALIZE END bulk_request={bulk_request}")
 
     session.add_all([bulk_request, account])
-    # todo: queue a send webhook job
+    # todo next: queue a send webhook job
     return bulk_request

@@ -1,13 +1,10 @@
 from typing import List
-# from uuid import UUID
-
 from pydantic import BaseModel, Field
 
 from app.amounts.converters import to_cents
 
 
 class CreditTransfer(BaseModel):
-    # transfer_id: Optional[UUID] = None
     amount: str = Field(..., min_length=1)
     currency: str = Field(..., min_length=3, max_length=3)
     counterparty_name: str = Field(..., min_length=1)
@@ -37,6 +34,8 @@ class BulkTransferRequest(BaseModel):
 class BulkTransferSuccessResponse(BaseModel):
     bulk_id: str  #  UUID
     message: str
+    # todo add status endpoint for this bulk request in the response:
+    # status_url: str
 
 
 class ErrorDetails(BaseModel):

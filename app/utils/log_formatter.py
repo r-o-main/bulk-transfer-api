@@ -1,14 +1,7 @@
 import logging
 import colorlog
 
-# LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
-#
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     format=LOG_FORMAT,
-#     datefmt="%Y-%m-%d %H:%M:%S",
-# )
-# logger = logging.getLogger("app:bulk-transfer")
+
 def get_logger(name="app"):
     handler = colorlog.StreamHandler()
     handler.setFormatter(colorlog.ColoredFormatter(
