@@ -4,13 +4,13 @@ from typing import Optional, List, Dict
 
 
 def stub_credit_transfer(
-        amount: Optional[str|int] = None,
+        amount_in_euros: Optional[str | int] = None,
         description: Optional[str] = None,
         key_to_remove: Optional[str] = None,
         key_to_add: Optional[str] = None,
 ):
     stubbed_credit_transfer = {
-        "amount": amount if amount is not None else "14.5",
+        "amount": amount_in_euros if amount_in_euros is not None else "14.5",
         "currency": "EUR",
         "counterparty_name": "Bip Bip",
         "counterparty_bic": "CRLYFRPPTOU",

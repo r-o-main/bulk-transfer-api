@@ -18,11 +18,19 @@ client = TestClient(app)  # https://fastapi.tiangolo.com/reference/testclient/, 
 @pytest.fixture(scope="module", autouse=True)
 def setup_bank_account(request):
     when(db).find_account_for_update(**KWARGS).thenReturn(
-        db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org", balance_cents=90000000)
+        db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
+                       balance_cents=90000000, ongoing_transfer_cents=0)
     )
 
 @pytest.fixture
-def unknown_bank_account(request):
+def when_ongoing_transfer_cents(request):
+    when(db).find_account_for_update(**KWARGS).thenReturn(
+        db.BankAccount(id=1, iban="123", bic="456", organization_name="Test Org",
+                       balance_cents=599900, ongoing_transfer_cents=399900)
+    )
+
+@pytest.fixture
+def when_unknown_bank_account(request):
     when(db).find_account_for_update(**KWARGS).thenReturn(None)
 
 @pytest.fixture(scope="module", autouse=True)
@@ -79,7 +87,7 @@ def test_transfers_bulk__when_valid_payload__should_return_201(sample_file):
     ),
     (
             'when amount is an int',
-            stub_bulk_transfer_payload(credit_transfers=[stub_credit_transfer(amount=15)])
+            stub_bulk_transfer_payload(credit_transfers=[stub_credit_transfer(amount_in_euros=15)])
     ),
     (
             'when additional request key',
@@ -90,6 +98,10 @@ def test_transfers_bulk__when_valid_payload__should_return_201(sample_file):
             stub_bulk_transfer_payload(
                 credit_transfers=[stub_credit_transfer(key_to_add="unexpected_key")]
             )
+    ),
+    (
+            'when credit_transfers is not a list',
+            stub_bulk_transfer_payload(credit_transfers=stub_credit_transfer())
     ),
 ])
 def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_message, payload):
@@ -132,8 +144,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer < 0',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="61238"),
-                    stub_credit_transfer(amount="-15"),
+                    stub_credit_transfer(amount_in_euros="61238"),
+                    stub_credit_transfer(amount_in_euros="-15"),
                 ]
             )
     ),
@@ -141,8 +153,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer == 0',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="0"),
-                    stub_credit_transfer(amount="199.99"),
+                    stub_credit_transfer(amount_in_euros="0"),
+                    stub_credit_transfer(amount_in_euros="199.99"),
                 ]
             )
     ),
@@ -150,7 +162,7 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer is null',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="199.99"),
+                    stub_credit_transfer(amount_in_euros="199.99"),
                     {
                         "amount": None,
                         "currency": "EUR",
@@ -166,8 +178,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer is empty',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount=""),
-                    stub_credit_transfer(amount="199.99"),
+                    stub_credit_transfer(amount_in_euros=""),
+                    stub_credit_transfer(amount_in_euros="199.99"),
                 ]
             )
     ),
@@ -175,8 +187,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer has more than 2 decimal places',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="12.56"),
-                    stub_credit_transfer(amount="199.999"),
+                    stub_credit_transfer(amount_in_euros="12.56"),
+                    stub_credit_transfer(amount_in_euros="199.999"),
                 ]
             )
     ),
@@ -184,8 +196,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when at least one amount to transfer is invalid',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="12.89"),
-                    stub_credit_transfer(amount="aaaa"),
+                    stub_credit_transfer(amount_in_euros="12.89"),
+                    stub_credit_transfer(amount_in_euros="aaaa"),
                 ]
             )
     ),
@@ -199,7 +211,7 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when total amount to transfer is higher than actual account balance (single transfer)',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="900000.01"),
+                    stub_credit_transfer(amount_in_euros="900000.01"),
                 ]
             )
     ),
@@ -207,8 +219,8 @@ def test_transfers_bulk__when_invalid_payload_model__should_return_422(assert_me
             'when total amount to transfer is higher than actual account balance',
             stub_bulk_transfer_payload(
                 credit_transfers=[
-                    stub_credit_transfer(amount="899005.25"),
-                    stub_credit_transfer(amount="999.1"),
+                    stub_credit_transfer(amount_in_euros="899005.25"),
+                    stub_credit_transfer(amount_in_euros="999.1"),
                 ]
             )
     ),
@@ -219,7 +231,15 @@ def test_transfers_bulk__should_return_422(assert_message, payload):
     assert response.status_code == 422, f"{assert_message}: {response.json()}"
 
 
-def test_transfers_bulk__when_unknown_organization__should_return_404(unknown_bank_account):
+def test_transfers_bulk__when_ongoing_transfers_and_balance_not_enough__should_return_422(when_ongoing_transfer_cents):
+    response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload(
+        credit_transfers=[stub_credit_transfer(amount_in_euros="3999")]
+    ))
+    print(f"response={response.json()}")
+    assert response.status_code == 422, f"{response.json()}"
+
+
+def test_transfers_bulk__when_unknown_organization__should_return_404(when_unknown_bank_account):
     response = client.post(url="/transfers/bulk", json=stub_bulk_transfer_payload())
     print(f"response={response.json()}")
     assert response.status_code == 404

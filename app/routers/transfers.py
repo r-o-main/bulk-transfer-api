@@ -128,10 +128,10 @@ def create_bulk_transfer(request: adapter.BulkTransferRequest, session: Session 
             logger.error(f"bulk_id={bulk_id} could not process request as account unknown")  # todo add logging context
             return reply_unknown_account_error(bulk_id=bulk_id)
 
-        account_balance = account.balance_cents
         total_transfer_amounts = sum(amounts_in_cents)
-        if total_transfer_amounts > account_balance:
-            logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient")  # todo add logging context
+        logger.error(f"++++ DEBUG bulk_id={bulk_id} total_transfer_amounts={total_transfer_amounts} | account balance={account.balance_cents} | ongoing transfers={account.ongoing_transfer_cents}")
+        if total_transfer_amounts + account.ongoing_transfer_cents > account.balance_cents:
+            logger.error(f"bulk_id={bulk_id} could not process request as account balance is insufficient for ongoing operations")  # todo add logging context
             return reply_not_enough_funds_error(bulk_id=bulk_id)
 
 
