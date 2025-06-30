@@ -82,7 +82,7 @@ sequenceDiagram
     end
 
     Note over Client, Bank: Optional: Webhook & status polling (not implemented)
-    Worker-->>API: POST webhook/transfers/bulk/status
+    Worker-->>Client: POST webhook/transfers/bulk/status
     Client-->>API: GET /transfers/{bulk_id}/status
     API-->>Client: Status response
 ```
