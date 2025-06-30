@@ -9,7 +9,7 @@ from mockito import when, KWARGS, mock
 from app.services import bulk_request_service
 from app.main import app
 from app.models import db
-from app.routers.transfers import MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST
+from app.routers.bulk_transfers import MAX_NUMBER_OF_TRANSFERS_PER_BULK_REQUEST
 
 from tests.faker import stub_credit_transfer, stub_bulk_transfer_payload, load_sample_payload
 

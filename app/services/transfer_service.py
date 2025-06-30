@@ -65,7 +65,7 @@ def process(session: Session, transfer_job: TransferJob) -> Optional[db.Transact
             success=False
         )
         response = fake_broker_client.queue_finalize_bulk_job(job=cancel_bulk_job)
-        logger.info(f"queued cancel bulk request job: {response}")
+        logger.debug(f"queued cancel bulk request job: {response}")
         return None
 
     success_bulk_job = BulkJob(
@@ -86,6 +86,6 @@ def transfer_funds(transfer_job: TransferJob) -> bool:
     try:
         # Assume it works:
         return True
-    except Exception as e:
+    except Exception as e:  # timeout, etc.
         logger.error(f"Failed to transfer {transfer_job.transfer_uuid} to external system: {e}")
         return False
