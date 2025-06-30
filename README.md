@@ -109,7 +109,7 @@ sequenceDiagram
 - Account management: funds reservation and atomic account updates
 - Financial accuracy: cents-based storage with `Decimal` conversion to prevent from float precision issues
 - Error handling: proper HTTP status codes and comprehensive error messages
-- Testing: comprehensive test suite with pytest and mocking
+- Testing: comprehensive test suite with pytest and mocking (75% code coverage)
 - Database migrations: light migration system ensuring to run all migrations on server startup
 
 ### Gaps
