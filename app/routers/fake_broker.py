@@ -93,7 +93,9 @@ def consume_finalize_bulk_job(session: Session = Depends(db.get_session)):
         raise HTTPException(status_code=404, detail="No bulk job in queue")
 
     with session.begin():
-        account: db.BankAccount | None = session.get(db.BankAccount, bulk_job.bank_account_id)
+        account = db.select_account_for_update_by_id(
+            session=session,bank_account_id=bulk_job.bank_account_id
+        )
         if not account:
             logger.warning(f"bulk_id={bulk_job.bulk_request_uuid} could not finalize: account not found")
             raise HTTPException(

@@ -89,6 +89,12 @@ def select_account_for_update(session: Session, bic: str, iban: str) -> Optional
     return session.exec(statement).first()
 
 
+def select_account_for_update_by_id(session: Session,bank_account_id: int) -> Optional[BankAccount]:
+    statement = select(BankAccount).where(BankAccount.id == bank_account_id).with_for_update()
+    statement = cast(Select, statement)
+    return session.exec(statement).first()
+
+
 def reserve_funds(session: Session, account: BankAccount, total_transfer_amounts: int):
     account.ongoing_transfer_cents += total_transfer_amounts
     session.add(account)

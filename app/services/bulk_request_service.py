@@ -82,7 +82,7 @@ def finalize_bulk_transfer(
     Args:
         session: Database session (must be in transaction)
         bulk_request: Bulk request to update (must be locked with FOR UPDATE)
-        account: Account being debited
+        account: Account being debited (must be locked with FOR UPDATE)
         single_transferred_amount_cents: Amount of this individual transfer
 
     Returns:
